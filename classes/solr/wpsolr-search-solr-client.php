@@ -89,11 +89,15 @@ class WPSolrSearchSolrClient extends WPSolrAbstractSolrClient {
 
 		$resultset = $client->execute( $suggestqry );
 
-		foreach ( $resultset as $term => $termResult ) {
-
-			foreach ( $termResult as $result ) {
-
-				array_push( $results, $result );
+		if ( !empty ( $response['suggest'] ) ) {
+			$terms = reset( array_values ( $response['suggest'] ) );
+			if ( !empty ( $terms[$input] ) ) {
+				$suggestions = $terms[$input]['suggestions'];
+				if ( count( $suggestions ) ) {
+					foreach ( $suggestions as $suggestion ) {
+						$results[] = $suggestion['term'];
+					}
+				}
 			}
 		}
 
