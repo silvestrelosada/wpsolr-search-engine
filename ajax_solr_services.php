@@ -1,9 +1,12 @@
 <?php
 
-include( dirname( __FILE__ ) . '/class-wp-solr.php' );
+include( dirname( __FILE__ ) . '/classes/solr/wpsolr-index-solr-client.php' );
+include( dirname( __FILE__ ) . '/classes/solr/wpsolr-search-solr-client.php' );
 
 // Load localization class
 WpSolrExtensions::require_once_wpsolr_extension( WpSolrExtensions::OPTION_LOCALIZATION, true );
+WpSolrExtensions::load();
+
 
 function solr_format_date( $thedate ) {
 	$datere  = '/(\d{4}-\d{2}-\d{2})\s(\d{2}:\d{2}:\d{2})/';
@@ -22,39 +25,16 @@ function add_scripts() {
 
 function fun_search_indexed_data() {
 
-	$search_que = '';
-	if ( isset( $_GET['search'] ) ) {
-		$search_que = $_GET['search'];
-	}
+	// Query keywords
+	$search_que = isset( $_GET['search'] ) ? $_GET['search'] : '';
 
-	$ad_url        = admin_url();
-	$get_page_info = get_page_by_title( 'Search Results' );
+	$ad_url = admin_url();
+
+	// Retrieve search form page url
+	$get_page_info = WPSolrSearchSolrClient::get_search_page();
 	$url           = get_permalink( $get_page_info->ID );
-	$solr_options  = get_option( 'wdm_solr_conf_data' );
-
-
-	$k     = '';
-	$sec   = '';
-	$proto = '';
-
-
-	if ( $solr_options['host_type'] == 'self_hosted' ) {
-		$_SESSION['wdm-host'] = $solr_options['solr_host'];
-		$_SESSION['wdm-port'] = $solr_options['solr_port'];
-		$_SESSION['wdm-path'] = $solr_options['solr_path'];
-
-
-	} else {
-
-		//$wdm_typehead_request_handler = 'wdm_return_goto_solr_rows';
-		$_SESSION['wdm-ghost']  = $solr_options['solr_host_goto'];
-		$_SESSION['wdm-gport']  = $solr_options['solr_port_goto'];
-		$_SESSION['wdm-gpath']  = $solr_options['solr_path_goto'];
-		$_SESSION['wdm-guser']  = $solr_options['solr_key_goto'];
-		$_SESSION['wdm-gpwd']   = $solr_options['solr_secret_goto'];
-		$_SESSION['wdm-gproto'] = $solr_options['solr_protocol_goto'];
-
-	}
+	// Filter the search page url. Used for multi-language search forms.
+	$url = apply_filters( WpSolrFilters::WPSOLR_FILTER_SEARCH_PAGE_URL, $url, $get_page_info->ID );
 
 	// Load localization options
 	$localization_options = OptionLocalization::get_options();
@@ -70,18 +50,14 @@ function fun_search_indexed_data() {
 
 
 	$solr_form_options = get_option( 'wdm_solr_res_data' );
-	$opt               = $solr_form_options['default_search'];
 
 	$fac_opt = get_option( 'wdm_solr_facet_data' );
-
-	$get_page_info = get_page_by_title( 'Search Results' );
 
 	// Block or start search after autocomplete selecton
 	$is_after_autocomplete_block_submit = isset( $solr_form_options['is_after_autocomplete_block_submit'] ) ? $solr_form_options['is_after_autocomplete_block_submit'] : '0';
 
 	echo $form = '
         <div class="ui-widget">
-	<input type="hidden" name="page_id" value="' . $get_page_info->ID . '" />
 	<input type="hidden"  id="ajax_nonce" value="' . $ajax_nonce . '">
         <input type="text" placeholder="' . OptionLocalization::get_term( $localization_options, 'search_form_edit_placeholder' ) . '" value="' . $search_que . '" name="search" id="search_que" class="search-field sfl2" autocomplete="off"/>
 	<input type="submit" value="' . OptionLocalization::get_term( $localization_options, 'search_form_button_label' ) . '" id="searchsubmit" style="position:relative;width:auto">
@@ -94,11 +70,11 @@ function fun_search_indexed_data() {
 	echo "<div class='cls_results'>";
 	if ( $search_que != '' && $search_que != '*:*' ) {
 
-		$solr = new wp_Solr();
+		try {
 
-		$res     = 0;
-		$options = $fac_opt['facets'];
-		if ( $res == 0 ) {
+			$solr = WPSolrSearchSolrClient::create_from_default_index_indice();
+
+			$options = $fac_opt['facets'];
 
 			// Use default sort
 			$sort_opt     = get_option( 'wdm_solr_sortby_data' );
@@ -130,7 +106,7 @@ function fun_search_indexed_data() {
 						$sort_select = "<label class='wdm_label'>$term</label><select class='select_field'>";
 
 						// Add options
-						$sort_options = wp_Solr::get_sort_options();
+						$sort_options = WPSolrSearchSolrClient::get_sort_options();
 						foreach ( explode( ',', $selected_sort_values ) as $sort_code ) {
 
 							$sort_label = OptionLocalization::get_term( $localization_options, $sort_code );
@@ -231,8 +207,9 @@ function fun_search_indexed_data() {
 				echo '</div>';
 				echo '</div><div style="clear:both;"></div>';
 			}
-		} else {
-			echo 'Unable to detect Solr instance';
+		} catch ( Exception $e ) {
+
+			echo sprintf( 'The search could not be performed. An error occured while trying to connect to the Apache Solr server. <br/><br/>%s<br/>', $e->getMessage() );
 		}
 
 	}
@@ -254,41 +231,22 @@ function return_solr_instance() {
 	$password = $_POST['spwd'];
 	$protocol = $_POST['sproto'];
 
-	if ( $username == '' ) {
-		$config = array(
-			"endpoint" =>
-				array(
-					"localhost" => array(
-						'scheme' => $protocol,
-						"host"   => $host,
-						"port"   => $port,
-						"path"   => $spath
-					)
-				)
-		);
-
-	} else {
-		$config = array(
-			'endpoint' => array(
-				'localhost1' => array(
-					'scheme'   => $protocol,
-					'host'     => $host,
-					'port'     => $port,
-					'path'     => $spath,
-					'username' => $username,
-					'password' => $password
-				)
+	$client = WPSolrSearchSolrClient::create_from_solarium_config( array(
+		'endpoint' => array(
+			'localhost1' => array(
+				'scheme'   => $protocol,
+				'host'     => $host,
+				'port'     => $port,
+				'path'     => $spath,
+				'username' => $username,
+				'password' => $password
 			)
-		);
-	}
-
-
-	$client = new Solarium\Client( $config );
-
-	$ping = $client->createPing();
+		)
+	) );
 
 	try {
-		$result = $client->ping( $ping );
+
+		$client->ping();
 
 	} catch ( Exception $e ) {
 
@@ -333,7 +291,7 @@ add_action( 'wp_ajax_' . 'return_solr_instance', 'return_solr_instance' );
 
 function return_solr_status() {
 
-	$solr = new wp_Solr();
+	$solr = WPSolrSearchSolrClient::create_from_default_index_indice();
 	echo $words = $solr->get_solr_status();
 
 }
@@ -350,7 +308,7 @@ function return_solr_results() {
 	$sort  = $_POST['sort_opt'];
 
 
-	$solr          = new wp_Solr();
+	$solr          = WPSolrSearchSolrClient::create_from_default_index_indice();
 	$final_result  = $solr->get_search_results( $query, $opt, $num, $sort );
 	$solr_options  = get_option( 'wdm_solr_conf_data' );
 	$output        = array();
@@ -396,6 +354,9 @@ add_action( 'wp_ajax_' . 'return_solr_results', 'return_solr_results' );
 function return_solr_index_data() {
 
 	try {
+		// Indice of Solr index to index
+		$solr_index_indice = $_POST['solr_index_indice'];
+
 		// Batch size
 		$batch_size = intval( $_POST['batch_size'] );
 
@@ -405,7 +366,14 @@ function return_solr_index_data() {
 		// Debug infos displayed on screen ?
 		$is_debug_indexing = ( $_POST['is_debug_indexing'] === "true" );
 
-		$solr      = new wp_Solr();
+		// Re-index all the data ?
+		$is_reindexing_all_posts = ( $_POST['is_reindexing_all_posts'] === "true" );
+
+		$solr = WPSolrIndexSolrClient::create( $solr_index_indice );
+		// Reset documents if requested
+		if ( $is_reindexing_all_posts ) {
+			$solr->reset_documents();
+		}
 		$res_final = $solr->index_data( $batch_size, null, $is_debug_indexing );
 
 		// Increment nb of document sent until now
@@ -440,7 +408,10 @@ function return_solr_delete_index() {
 
 	try {
 
-		$solr = new wp_Solr();
+		// Indice of Solr index to delete
+		$solr_index_indice = $_POST['solr_index_indice'];
+
+		$solr = WPSolrIndexSolrClient::create( $solr_index_indice );
 		$solr->delete_documents();
 
 	} catch ( Exception $e ) {

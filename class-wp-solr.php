@@ -1039,8 +1039,15 @@ class wp_Solr {
 		$solarium_document_for_update->id    = $pid;
 		$solarium_document_for_update->PID   = $pid;
 		$solarium_document_for_update->title = $ptitle;
-		// Remove HTML tags and shortcodes
-		$solarium_document_for_update->content         = strip_shortcodes( strip_tags( $pcontent ) );
+
+		// Remove shortcodes tags, but not their content.
+		// Credit: https://wordpress.org/support/topic/stripping-shortcodes-keeping-the-content.
+		// Modified to enable "/" in attributes
+		$content_with_shortcode_expanded = preg_replace("~(?:\[/?)[^\]]+/?\]~s", '', $pcontent);  # strip shortcodes, keep shortcode content;
+		// Remove HTML tags
+		$solarium_document_for_update->content         = strip_tags( $content_with_shortcode_expanded );
+
+
 		$solarium_document_for_update->author          = $pauthor;
 		$solarium_document_for_update->author_s        = $pauthor_s;
 		$solarium_document_for_update->type            = $ptype;

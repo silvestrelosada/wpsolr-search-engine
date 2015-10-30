@@ -1,19 +1,24 @@
 <?php
 /**
  * Plugin Name: Apache Solr search by WPSOLR
- * Description: Replace your sluggish and rigid SQL search with the world open source leader Apache Solr wich powers the leading internet websites
- * Version: 4.7
+ * Description: Search is the secret weapon of the biggest websites. WPSOLR brings you the same technology, but for free.
+ * Version: 5.8
  * Author: WPSOLR.COM
  * Plugin URI: http://www.wpsolr.com
  * License: GPL2
  */
 
+// Composer autoloader
+require_once plugin_dir_path( __FILE__ ) . 'vendor/autoload.php';
+
 require_once 'ajax_solr_services.php';
 require_once 'dashboard_settings.php';
-require_once 'class-wp-solr.php';
 require_once 'autocomplete.php';
 
-global $solr;
+/* Include Solr clients */
+require_once 'classes/solr/wpsolr-index-solr-client.php';
+require_once 'classes/solr/wpsolr-search-solr-client.php';
+
 
 /* Register Solr settings from dashboard
  * Add menu page in dashboard - Solr settings
@@ -22,7 +27,7 @@ global $solr;
  */
 add_action( 'wp_head', 'check_default_options_and_function' );
 add_action( 'admin_menu', 'fun_add_solr_settings' );
-add_action( 'admin_init', 'func_reg_solr_form_setting' );
+add_action( 'admin_init', 'wpsolr_admin_init' );
 
 /*
  * Display Solr errors in admin when a save on a post can't index to Solr
@@ -37,6 +42,12 @@ function solr_post_save_admin_notice() {
 		delete_transient( get_current_user_id() . 'updated_solr_post_save_admin_notice' );
 		echo "<div class=\"updated\"><p>(WPSOLR) $out</p></div>";
 	}
+
+	if ( $out = get_transient( get_current_user_id() . 'wpml_some_languages_have_no_solr_index_admin_notice' ) ) {
+		delete_transient( get_current_user_id() . 'wpml_some_languages_have_no_solr_index_admin_notice' );
+		echo "<div class=\"error\"><p>(WPSOLR) $out</p></div>";
+	}
+
 }
 
 add_action( 'admin_notices', "solr_post_save_admin_notice" );
@@ -61,7 +72,7 @@ function add_remove_document_to_solr_index( $post_id, $post, $update ) {
 		if ( 'publish' == $post->post_status ) {
 			// post published, add/update it from Solr index
 
-			$solr = new wp_Solr();
+			$solr = WPSolrIndexSolrClient::create();
 
 			$solr->index_data( 1, $post );
 
@@ -70,7 +81,7 @@ function add_remove_document_to_solr_index( $post_id, $post, $update ) {
 
 		} else {
 			// post unpublished, remove it from Solr index
-			$solr = new wp_Solr();
+			$solr = WPSolrIndexSolrClient::create();
 
 			$solr->delete_document( $post );
 
@@ -93,12 +104,18 @@ add_action( 'add_attachment', 'add_attachment_to_solr_index', 10, 3 );
 function add_attachment_to_solr_index( $attachment_id ) {
 
 	// Index the new attachment
+	try {
+		$solr = WPSolrIndexSolrClient::create();
 
-	$solr = new wp_Solr();
+		$solr->index_data( 1, get_post( $attachment_id ) );
 
-	$solr->index_data( 1, get_post( $attachment_id ) );
+		set_transient( get_current_user_id() . 'updated_solr_post_save_admin_notice', 'Attachment added to Solr' );
 
-	set_transient( get_current_user_id() . 'updated_solr_post_save_admin_notice', 'Attachment added to Solr' );
+	} catch ( Exception $e ) {
+
+		set_transient( get_current_user_id() . 'error_solr_post_save_admin_notice', htmlentities( $e->getMessage() ) );
+	}
+
 }
 
 /*
@@ -108,12 +125,18 @@ add_action( 'delete_attachment', 'delete_attachment_to_solr_index', 10, 3 );
 function delete_attachment_to_solr_index( $attachment_id ) {
 
 	// Remove the attachment from Solr index
+	try {
+		$solr = WPSolrIndexSolrClient::create();
 
-	$solr = new wp_Solr();
+		$solr->delete_document( get_post( $attachment_id ) );
 
-	$solr->delete_document( get_post( $attachment_id ) );
+		set_transient( get_current_user_id() . 'updated_solr_post_save_admin_notice', 'Attachment deleted from Solr' );
 
-	set_transient( get_current_user_id() . 'updated_solr_post_save_admin_notice', 'Attachment deleted from Solr' );
+	} catch ( Exception $e ) {
+
+		set_transient( get_current_user_id() . 'error_solr_post_save_admin_notice', htmlentities( $e->getMessage() ) );
+	}
+
 }
 
 
@@ -124,13 +147,25 @@ function delete_attachment_to_solr_index( $attachment_id ) {
 
 function check_default_options_and_function() {
 	$solr_options = get_option( 'wdm_solr_res_data' );
-	if ( $solr_options['default_search'] == 1 ) {
+	if ( isset( $solr_options['default_search'] ) ) {
 
 		add_filter( 'get_search_form', 'solr_search_form' );
 
 	}
 }
 
+add_filter( 'template_include', 'portfolio_page_template', 99 );
+function portfolio_page_template( $template ) {
+
+	if ( is_page( WPSolrSearchSolrClient::_SEARCH_PAGE_SLUG ) ) {
+		$new_template = locate_template( WPSolrSearchSolrClient::_SEARCH_PAGE_TEMPLATE );
+		if ( '' != $new_template ) {
+			return $new_template;
+		}
+	}
+
+	return $template;
+}
 
 /* Create default page template for search results
 */
@@ -140,40 +175,18 @@ function fun_dis_search() {
 	echo solr_search_form();
 }
 
-register_activation_hook( __FILE__, 'fun_add_result_page' );
-function fun_add_result_page() {
-	$the_page = get_page_by_title( 'Search Results', 'OBJECT', 'page' );
-	if ( ! $the_page ) {
 
-		$_p = array(
-			'post_type'      => 'page',
-			'post_title'     => 'Search Results',
-			'post_content'   => '[solr_search_shortcode]',
-			'post_status'    => 'publish',
-			'post_author'    => 1,
-			'comment_status' => 'closed',
-			'post_name'      => 'Search Results'
-		);
+register_activation_hook( __FILE__, 'my_register_activation_hook' );
+function my_register_activation_hook() {
 
-		$the_page_id = wp_insert_post( $_p );
-
-		update_post_meta( $the_page_id, 'bwps_enable_ssl', '1' );
-
-	} else {
-
-		if ( $the_page->post_status != 'publish' ) {
-
-
-			$the_page->post_status = 'publish';
-
-			$the_page_id = wp_update_post( $the_page );
-		} else {
-			$the_page_id = $the_page->ID;
-		}
-	}
-
-
+	/*
+	 * Migrate old data on plugin update
+	 */
+	WpSolrExtensions::require_once_wpsolr_extension( WpSolrExtensions::OPTION_INDEXES, true );
+	$option_object = new OptionIndexes();
+	$option_object->migrate_data_from_v4_9();
 }
+
 
 add_action( 'admin_notices', 'curl_dependency_check' );
 function curl_dependency_check() {
@@ -189,58 +202,66 @@ function curl_dependency_check() {
 function solr_search_form() {
 
 	ob_start();
-	$form   = ob_get_clean();
-	$ad_url = admin_url();
 
-	if ( isset( $_GET['search'] ) ) {
-		$search_que = $_GET['search'];
-	} else {
-		$search_que = '';
-	}
-	$solr_options = get_option( 'wdm_solr_conf_data' );
+	// Load current theme's wpsolr search form if it exists
+	$search_form_template = locate_template( 'wpsolr-search-engine/searchform.php' );
+	if ( '' != $search_form_template ) {
 
-	if ( $solr_options['host_type'] == 'self_hosted' ) {
-		$_SESSION['wdm-host'] = $solr_options['solr_host'];
-		$_SESSION['wdm-port'] = $solr_options['solr_port'];
-		$_SESSION['wdm-path'] = $solr_options['solr_path'];
+		require( $search_form_template );
+		$form = ob_get_clean();
 
 	} else {
-		//$wdm_typehead_request_handler = 'wdm_return_goto_solr_rows';
-		$_SESSION['wdm-ghost']  = $solr_options['solr_host_goto'];
-		$_SESSION['wdm-gport']  = $solr_options['solr_port_goto'];
-		$_SESSION['wdm-gpath']  = $solr_options['solr_path_goto'];
-		$_SESSION['wdm-guser']  = $solr_options['solr_key_goto'];
-		$_SESSION['wdm-gpwd']   = $solr_options['solr_secret_goto'];
-		$_SESSION['wdm-gproto'] = $solr_options['solr_protocol_goto'];
 
-	}
+		$ad_url = admin_url();
 
-	// Get localization options
-	$localization_options = OptionLocalization::get_options();
+		if ( isset( $_GET['search'] ) ) {
+			$search_que = $_GET['search'];
+		} else {
+			$search_que = '';
+		}
+		$solr_options = get_option( 'wdm_solr_conf_data' );
 
-	// Get the result option
-	$results_options = get_option( 'wdm_solr_res_data' );
+		if ( $solr_options['host_type'] == 'self_hosted' ) {
+			$_SESSION['wdm-host'] = $solr_options['solr_host'];
+			$_SESSION['wdm-port'] = $solr_options['solr_port'];
+			$_SESSION['wdm-path'] = $solr_options['solr_path'];
 
-	$wdm_typehead_request_handler = 'wdm_return_solr_rows';
+		} else {
+			//$wdm_typehead_request_handler = 'wdm_return_goto_solr_rows';
+			$_SESSION['wdm-ghost']  = $solr_options['solr_host_goto'];
+			$_SESSION['wdm-gport']  = $solr_options['solr_port_goto'];
+			$_SESSION['wdm-gpath']  = $solr_options['solr_path_goto'];
+			$_SESSION['wdm-guser']  = $solr_options['solr_key_goto'];
+			$_SESSION['wdm-gpwd']   = $solr_options['solr_secret_goto'];
+			$_SESSION['wdm-gproto'] = $solr_options['solr_protocol_goto'];
 
-	$get_page_info = get_page_by_title( 'Search Results' );
-	$ajax_nonce    = wp_create_nonce( "nonce_for_autocomplete" );
+		}
+
+		// Get localization options
+		$localization_options = OptionLocalization::get_options();
+
+		// Get the result option
+		$results_options = get_option( 'wdm_solr_res_data' );
+
+		$wdm_typehead_request_handler = 'wdm_return_solr_rows';
+
+		$get_page_info = WPSolrSearchSolrClient::get_search_page();
+		$ajax_nonce    = wp_create_nonce( "nonce_for_autocomplete" );
 
 
-	$url  = get_permalink( $get_page_info->ID );
-	$form = "<div class='cls_search' style='width:100%'><form action='$url' method='get'  class='search-frm2' >";
-	$form .= '<input type="hidden" value="' . $wdm_typehead_request_handler . '" id="path_to_fold">';
-	$form .= '<input type="hidden"  id="ajax_nonce" value="' . $ajax_nonce . '">';
+		$url = get_permalink( $get_page_info->ID );
+		// Filter the search page url. Used for multi-language search forms.
+		$url = apply_filters( WpSolrFilters::WPSOLR_FILTER_SEARCH_PAGE_URL, $url, $get_page_info->ID );
 
-	$form .= '<input type="hidden" value="' . $ad_url . '" id="path_to_admin">';
-	$form .= '<input type="hidden" value="' . $search_que . '" id="search_opt">';
+		$form = "<div class='cls_search' style='width:100%'><form action='$url' method='get'  class='search-frm2' >";
+		$form .= '<input type="hidden" value="' . $wdm_typehead_request_handler . '" id="path_to_fold">';
+		$form .= '<input type="hidden"  id="ajax_nonce" value="' . $ajax_nonce . '">';
 
-	$is_after_autocomplete_block_submit = isset( $results_options['is_after_autocomplete_block_submit'] ) ? $results_options['is_after_autocomplete_block_submit'] : '0';
-	$form .= "<input type='hidden' value='$is_after_autocomplete_block_submit' id='is_after_autocomplete_block_submit'>";
+		$form .= '<input type="hidden" value="' . $ad_url . '" id="path_to_admin">';
+		$form .= '<input type="hidden" value="' . $search_que . '" id="search_opt">';
 
-	$form .= '
+		$form .= '
        <div class="ui-widget search-box">
-        <input type="hidden" name="page_id" value="' . $get_page_info->ID . '" />
  	<input type="hidden"  id="ajax_nonce" value="' . $ajax_nonce . '">
         <input type="text" placeholder="' . OptionLocalization::get_term( $localization_options, 'search_form_edit_placeholder' ) . '" value="' . $search_que . '" name="search" id="search_que" class="search-field sfl1" autocomplete="off"/>
 	<input type="submit" value="' . OptionLocalization::get_term( $localization_options, 'search_form_button_label' ) . '" id="searchsubmit" style="position:relative;width:auto">
@@ -248,17 +269,29 @@ function solr_search_form() {
         </div>
 	</div>
        </form>';
+	}
 
 	return $form;
 
 
 }
 
-/*
- * Load WPSOLR text domain to local /lang/ directory
- */
-add_action( 'plugins_loaded', 'wpsolr_load_textdomain' );
-function wpsolr_load_textdomain() {
-	load_plugin_textdomain( 'wpsolr', false, dirname( plugin_basename( __FILE__ ) ) . '/lang/' );
-}
+add_action( 'plugins_loaded', 'my_plugins_loaded' );
+function my_plugins_loaded() {
+	/*
+	global $g_wpsolr_extensions;
 
+	// Load active extensions
+	if ( ! isset( $g_wpsolr_extensions ) ) {
+		$g_wpsolr_extensions = new WpSolrExtensions();
+	}
+	*/
+
+	/*
+	 * Load WPSOLR text domain to the Wordpress languages plugin directory (WP_LANG_DIR/plugins)
+	 * Copy your .mo files there
+	 * Example: /htdocs/wp-includes/languages/plugins/wpsolr-fr_FR.mo or /htdocs/wp-content/languages/plugins/wpsolr-fr_FR.mo
+	 * You can find our template file in this plugin's /languages/wpsolr.pot file
+	 */
+	load_plugin_textdomain( 'wpsolr', false, false );
+}

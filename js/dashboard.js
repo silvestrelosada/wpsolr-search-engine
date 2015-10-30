@@ -25,6 +25,7 @@ jQuery(document).ready(function () {
         jQuery('#solr_delete_index').attr('value', 'Deleting ... please wait');
 
         path = jQuery('#adm_path').val();
+        solr_index_indice = jQuery('#solr_index_indice').val();
 
         var request = jQuery.ajax({
             url: path + 'admin-ajax.php',
@@ -32,7 +33,8 @@ jQuery(document).ready(function () {
             dataType: "json",
             timeout: 1000 * 3600 * 24,
             data: {
-                action: 'return_solr_delete_index'
+                action: 'return_solr_delete_index',
+                solr_index_indice: solr_index_indice
             }
         });
 
@@ -77,8 +79,10 @@ jQuery(document).ready(function () {
         jQuery('#solr_start_index_data').hide();
         jQuery('#solr_delete_index').hide();
 
+        solr_index_indice = jQuery('#solr_index_indice').val();
         batch_size = jQuery('#batch_size').val();
         is_debug_indexing = jQuery('#is_debug_indexing').prop('checked');
+        is_reindexing_all_posts = jQuery('#is_reindexing_all_posts').prop('checked');
 
         err = 1;
 
@@ -94,7 +98,7 @@ jQuery(document).ready(function () {
             return false;
         } else {
 
-            call_solr_index_data(batch_size, 0, is_debug_indexing);
+            call_solr_index_data(solr_index_indice, batch_size, 0, is_debug_indexing, is_reindexing_all_posts);
 
             // Block submit
             return false;
@@ -104,7 +108,7 @@ jQuery(document).ready(function () {
 
 
     // Promise to the Ajax call
-    function call_solr_index_data(batch_size, nb_results, is_debug_indexing) {
+    function call_solr_index_data(solr_index_indice, batch_size, nb_results, is_debug_indexing, is_reindexing_all_posts) {
 
         var nb_results_message = nb_results + ' documents indexed so far'
 
@@ -117,9 +121,11 @@ jQuery(document).ready(function () {
             type: "post",
             data: {
                 action: 'return_solr_index_data',
+                solr_index_indice: solr_index_indice,
                 batch_size: batch_size,
                 nb_results: nb_results,
-                is_debug_indexing: is_debug_indexing
+                is_debug_indexing: is_debug_indexing,
+                is_reindexing_all_posts: is_reindexing_all_posts
             },
             dataType: "json",
             timeout: 1000 * 3600 * 24
@@ -129,6 +135,7 @@ jQuery(document).ready(function () {
 
             if (data.debug_text) {
                 // Debug
+
                 jQuery('.status_debug_message').append('<br><br>' + data.debug_text);
 
                 if (data.indexing_complete) {
@@ -140,16 +147,20 @@ jQuery(document).ready(function () {
 
             if (data.status != 0 || data.message) {
                 // Errors
+
                 jQuery('.status_index_message').html('<br><br>An error occured: <br><br>' + data.message);
 
             }
             else if (!data.indexing_complete) {
 
                 // If indexing completed, stop. Else, call once more.
-                timeoutHandler = setTimeout(call_solr_index_data(batch_size, data.nb_results, is_debug_indexing), 100);
+                // Do not re-index all, again !
+                is_reindexing_all_posts = false;
+                timeoutHandler = setTimeout(call_solr_index_data(solr_index_indice, batch_size, data.nb_results, is_debug_indexing, is_reindexing_all_posts), 100);
 
 
             } else {
+
                 jQuery('#solr_stop_index_data').click();
 
             }
@@ -160,16 +171,34 @@ jQuery(document).ready(function () {
 
             if (error) {
 
+                message = '';
                 if (batch_size > 100) {
                     message = '<br> You could try to decrease your batch size to prevent errors or timeouts.';
                 }
-                jQuery('.status_index_message').html('<br><br>An error or timeout occured. <br><br>' + '<b>Error code:</b> ' + status + '<br><br>' + '<b>Error message:</b> ' + error + '<br><br>' + message);
+                jQuery('.status_index_message').html('<br><br>An error or timeout occured. <br><br>' + '<b>Error code:</b> ' + status + '<br><br>' + '<b>Error message:</b> ' + escapeHtml(error) + '<br><br>' + escapeHtml(req.responseText) + '<br><br>' + message);
             }
 
         });
 
     }
 
+    /*
+     Escape html for javascript error messages to be displayed correctly.
+     */
+    var entityMap = {
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': '&quot;',
+        "'": '&#39;',
+        "/": '&#x2F;'
+    };
+
+    function escapeHtml(string) {
+        return String(string).replace(/[&<>"'\/]/g, function (s) {
+            return entityMap[s];
+        });
+    }
 
     jQuery('#save_selected_index_options_form').click(function () {
         ps_types = '';
@@ -230,6 +259,7 @@ jQuery(document).ready(function () {
     jQuery('#save_selected_res_options_form').click(function () {
         num_of_res = jQuery('#number_of_res').val();
         num_of_fac = jQuery('#number_of_fac').val();
+        highlighting_fragsize = jQuery('#highlighting_fragsize').val();
         err = 1;
         if (isNaN(num_of_res)) {
             jQuery('.res_err').text("Please enter valid number of results");
@@ -255,6 +285,20 @@ jQuery(document).ready(function () {
             jQuery('.fac_err').text();
 
         }
+
+        if (isNaN(highlighting_fragsize)) {
+            jQuery('.highlighting_fragsize_err').text("Please enter a valid Highlighting fragment size");
+            err = 0;
+        }
+        else if (highlighting_fragsize < 1) {
+            jQuery('.highlighting_fragsize_err').text("Highlighting fragment size must be > 0");
+            err = 0;
+        }
+        else {
+            jQuery('.highlighting_fragsize_err').text();
+
+        }
+
         if (err == 0)
             return false;
     })
@@ -264,23 +308,72 @@ jQuery(document).ready(function () {
             return false;
     })
 
-    jQuery('#check_solr_status').click(function () {
+    /*
+     Create a temporary managed index
+     */
+    jQuery("input[name='submit_button_form_temporary_index']").click(function () {
+
+        // Display the loading icon
+        jQuery(this).hide();
+        jQuery('.solr_error').hide();
+        jQuery('.wdm_note').hide();
+        jQuery(this).after("<h2>Please wait a few seconds. We are configuring your test Solr index ...</h2>");
+        jQuery(this).after("<div class='loading'>");
+
+        // Let the submit execute by doing nothing
+        return true;
+    });
+
+    /*
+     Remove an index configuration
+     */
+    jQuery('#delete_index_configuration').click(function () {
+
+        // Remove the current configuration to delete from the DOM
+        jQuery('#current_index_configuration_edited_id').remove();
+
+        // Autosubmit
+        jQuery('#settings_conf_form').submit();
+    });
+
+
+    jQuery('#check_index_status').click(function () {
         path = jQuery('#adm_path').val();
 
-        host = jQuery('#solr_host').val();
-        port = jQuery('#solr_port').val();
-        spath = jQuery('#solr_path').val();
-        protocol = jQuery('#solr_protocol').val();
-
-
-        if (spath.substr(spath.length - 1, 1) == '/')
-            spath = spath.substr(0, spath.length - 1);
-
-        jQuery('#solr_path').val(spath);
+        name = jQuery('#index_name').val();
+        host = jQuery('#index_host').val();
+        port = jQuery('#index_port').val();
+        spath = jQuery('#index_path').val();
+        pwd = jQuery('#index_secret').val();
+        user = jQuery('#index_key').val();
+        protocol = jQuery('#index_protocol').val();
 
         error = 0;
+
+        if (name == '') {
+            jQuery('.name_err').text('Please enter an index name');
+            error = 1;
+        }
+        else {
+            jQuery('.name_err').text('');
+        }
+
+        if (spath == '') {
+            jQuery('.path_err').text('Please enter a path for your index');
+            error = 1;
+        }
+        else {
+            // Remove last '/'
+            if (spath.substr(spath.length - 1, 1) == '/') {
+                spath = spath.substr(0, spath.length - 1);
+                jQuery('#index_path').val(spath);
+            }
+
+            jQuery('.path_err').text('');
+        }
+
         if (host == '') {
-            jQuery('.host_err').text('Please enter solr host');
+            jQuery('.host_err').text('Please enter an index host');
             error = 1;
         }
         else {
@@ -288,113 +381,13 @@ jQuery(document).ready(function () {
         }
 
         if (isNaN(port) || port.length < 2) {
-            jQuery('.port_err').text('Please enter valid port');
+            jQuery('.port_err').text('Please enter a valid port');
             error = 1;
         }
         else
             jQuery('.port_err').text('');
 
-        if (spath == '') {
-            jQuery('.path_err').text('Please enter solr path');
-            error = 1;
-        }
-        else
-            jQuery('.path_err').text('');
-        if (error == 1) {
-            return false;
 
-        }
-        else {
-            jQuery('.img-succ').css('display', 'none');
-            jQuery('.img-err').css('display', 'none');
-            jQuery('.img-load').css('display', 'inline');
-
-            jQuery.ajax({
-                url: path + 'admin-ajax.php',
-                type: "post",
-                timeout: 10000,
-                data: {
-                    action: 'return_solr_instance',
-                    'sproto': protocol,
-                    'shost': host,
-                    'sport': port,
-                    'spath': spath,
-                    'spwd': '',
-                    'skey': ''
-                },
-                success: function (data1) {
-
-                    jQuery('.img-load').css('display', 'none');
-                    if (data1 == 0) {
-                        jQuery('.solr_error').html('');
-                        jQuery('.img-succ').css('display', 'inline');
-                        jQuery('#settings_conf_form').submit();
-                    }
-                    else if (data1 == 1)
-                        jQuery('.solr_error').text('Error in detecting solr instance');
-                    else
-                        jQuery('.solr_error').html(data1);
-
-                },
-                error: function (req, status, error) {
-
-                    jQuery('.img-load').css('display', 'none');
-
-                    jQuery('.solr_error').text('Timeout: we had no response from your Solr server in less than 10 seconds. It\'s probably because port ' + port + ' is blocked. Please try another port, for instance 443, or contact your hosting provider to unblock port ' + port + '.');
-                }
-
-            });
-
-        }
-
-    })
-    jQuery('#check_solr_status_third').click(function () {
-        path = jQuery('#adm_path').val();
-        host = jQuery('#gtsolr_host').val();
-        port = jQuery('#gtsolr_port').val();
-        spath = jQuery('#gtsolr_path').val();
-        pwd = jQuery('#gtsolr_secret').val();
-        user = jQuery('#gtsolr_key').val();
-        protocol = jQuery('#gtsolr_protocol').val();
-
-
-        if (spath.substr(spath.length - 1, 1) == '/')
-            spath = spath.substr(0, spath.length - 1);
-        jQuery('#gtsolr_path').val(spath);
-        error = 0;
-        if (host == '') {
-            jQuery('.ghost_err').text('Please enter solr host');
-            error = 1;
-        }
-        else {
-            jQuery('.ghost_err').text('');
-        }
-
-        if (isNaN(port) || port.length < 2) {
-            jQuery('.gport_err').text('Please enter valid port');
-            error = 1;
-        }
-        else
-            jQuery('.gport_err').text('');
-
-        if (spath == '') {
-            jQuery('.gpath_err').text('Please enter solr path');
-            error = 1;
-        }
-        else
-            jQuery('.gpath_err').text('');
-        if (pwd == '') {
-            jQuery('.gsec_err').text('Please enter solr secret');
-            error = 1;
-        }
-        else
-            jQuery('.gsec_err').text('');
-        if (user == '') {
-            jQuery('.gkey_err').text('Please enter solr key');
-            error = 1;
-        }
-        else
-            jQuery('.gkey_err').text('');
         if (error == 1)
             return false;
         else {

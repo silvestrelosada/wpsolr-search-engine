@@ -2,7 +2,7 @@
 
 Contributors: WPSOLR.COM
 
-Current Version: 4.7
+Current Version: 5.8
 
 Author:  WPSOLR.COM
 
@@ -12,18 +12,64 @@ Tags: Solr in WordPress, relevance, Solr search, fast search, wpsolr, apache sol
 
 Requires at least: 3.7.1
 
-Tested up to: 4.2.2
+Tested up to: 4.3
 
-Stable tag: 4.7
+Stable tag: 5.8
 
-Replace your sluggish and rigid SQL search with the world open source leader Apache Solr wich powers the leading internet websites
+Search is the secret weapon of the biggest websites. WPSOLR brings you the same technology, but for free.
 
 == Description ==
 
+= I don't have an Apache Solr server, how can I test WPSOLR search ? =
+We provide a free anonymous Apache Solr index for 2 hours, pre-configured with WPSOLR schema.xml. You can test WPSOLR, without the burden of installing Apache Solr. After that, the index is automatically deleted.
+
+= About us =
+WPSOLR is backed by professionals. We are committed to develop and support new features for a long time.
+
+= Need support ? =
+- We deliver free bug and suggestions support with the community forum.
+- We deliver professional Zendesk support, and an assistance to setup WPSOLR, with a <a href="http://www.gotosolr.com/en" target="_blank">Gotosolr subscription</a>.
+
+= How fast is WPSOLR ? =
+Searches should be under 500ms, whatever the number of posts you have.
+
+= Is there any size limit ? =
+WPSOLR can manage virtually any number of posts. The only constraint is the time to index all your posts the first time. We have users with hundreds of thousands, even millions, of posts.
+
+= 1 million documents search =
+Review on a 1 million documents search : <a href="https://wordpress.org/support/topic/awesome-plugin-1526" target="_blank">"Have used it to index over 1 million data in a custom WP application and the results have been fantastic"</a>.
+
+= Our plugin website =
+<a href="http://www.wpsolr.com" target="_blank">http://www.wpsolr.com</a>
+
+= Our Solr hosting website =
+If you do not want to host your own Solr server: <a href="http://www.gotosolr.com/en" target="_blank">http://www.gotosolr.com</a>
+
+= Multi-language live search demo with WPML =
+Visit <a href='http://www.gotosolr.com/en/search-wpsolr/?search=solr'>English/French WPML search page demo</a>.
+
+= Super fast live suggestions 500ms =
+Try on words like « solr », « cassandra », « security », « indexes », « search ».
+
+= Super fast facets filters 500ms =
+Notice the facets on the left side with their nice clicked Ajax display, the terms highlighting in the results snippets, the « order by » drop-down list.
+
+= Did you mean =
+To test the « did you mean » (suggestions on misspelled words), you can search on « soler » (suggested as « solr »), or « casandra » (suggested as « cassandra »).
+
+= Compatibility =
 Compatible with Apache Solr up to Solr 5.2
+
+= Tuning =
+Tune your search page and results with WPSOLR admin panels.
+
+Tune even more your search with hundreds of parameters, just by tweaking the standard Apache Solr files, solrconfig.xml and schema.xml.
+
+Search in multi-language content, with language specific stemming, stopwords, synonyms,
 
 Boost your search with multi-media content (pdf, .xls, .doc), facet filters, autocompletion, suggestions, and optional hosting.
 
+= Why Apache Solr ? =
 Standard WP search is performed by SQL queries directly on the database. So do most of search plugins.
 But SQL is awfully greedy in computer resources, especially when it comes to table joins and wild cards (select * where field like ‘%keyword%’), which are both heavily used by search.
 And SQL can’t keep well with natural language: synonyms, language specific plurals, stop-words, …
@@ -52,10 +98,10 @@ And now, with this plugin, you can get it for free. So, fasten your seat belt, a
 10. Configuration options allow you to select pages to ignore.
 11. Host Solr remotely using gotosolr.
 12. Solr configuration made easy.
+13. Multi-language search is supported with WPML.
 
 For more details visit <a href='http://wpsolr.com'>wpsolr.com</a>
 
-For a live demo visit <a href='http://www.gotosolr.com/search-results/?search=solr'>live search page demo</a>. Try the live search (autocompletion), on words like « solr », « cassandra », « security », « indexes », « search ». Notice the facets on the left side with their nice clicked Ajax display, the terms highlighting in the results snippets, the « order by » drop-down list. To test the « did you mean » (suggestions on misspelled words), you can search on « soler » (suggested as « solr »), or « casandra » (suggested as « cassandra »).
 
 
 == Installation ==
@@ -85,6 +131,53 @@ For a live demo visit <a href='http://www.gotosolr.com/search-results/?search=so
 16. Admin: Change all front-end texts in admin
 
 == Changelog ==
+
+= 5.8 =
+* Front-end search page Ajax: replace deprecated JQuery .live() by .on()
+
+= 5.7 =
+* Add an indexing option: post excerpt can be indexed with post content, and appear in autocomplete and highlighted results.
+* WARNING: this will require you to re-index all your documents. It can take a while if you have a large amount of documents in your WP database.
+
+= 5.6 =
+* Fix bug "Headers already sent" when activating the plugin.
+
+= 5.5 =
+* One-click generation and setup of a fully working online Solr index. More than enough to fully test WPSOLR in a few minutes.
+* Fix bug in Solr when emptying Solr indexes.
+
+= 5.4 =
+* Improve search speed by 2-3 times.
+* Fix bug in category facet.
+* WARNING: this will require you to re-index all your documents. It can take a while if you have a large amount of documents in your WP database.
+
+= 5.3 =
+* Update documentation.
+
+= 5.2 =
+* New admin option to expand shortcodes found in posts content before indexing in Solr, rather than stripping them.
+* WARNING: this will require you to re-index all your documents. It can take a while if you have a large amount of documents in your WP database.
+* Remove HTML and php tags from custom fields before indexing in Solr.
+* WARNING: this will require you to re-index all your documents. It can take a while if you have a large amount of documents in your WP database.
+* New admin option to control the size of the results snippets (highlighting fragment size).
+* New admin option to re-index all the posts, without deleting the index.
+
+= 5.1 =
+* Use custom fields also in search, autocomplete and suggestions (did you mean). Until now, custom fields where only displayed as facets.
+* WARNING: this will require you to re-index all your documents. It can take a while if you have a large amount of documents in your WP database.
+
+= 5.0 =
+* Fix error while updating the Solr index when post/page are published or trashed. 
+
+= 4.9 =
+* Fully support multi-language search form and search results with the plugin WPML (tested for WPML Multilingual CMS > 3.1.6).
+* Use .mo files to translate the search form and search results front-end texts.
+* Manage several Solr indexes.
+* The search page is now /search-wpsolr (to be sure it does not exist yet). Migrate your /search-results page content if you customized it.
+
+= 4.8 =
+* Index the shortcodes content when stripping shortcodes tags.
+* WARNING: this will require you to re-index all your documents. It can take a while if you have a large amount of documents in your WP database.
 
 = 4.7 =
 * (Screenshot 6) A new option can prevent/enforce submitting the search form after selecting a value from the autocomplete list.
@@ -223,7 +316,10 @@ For a live demo visit <a href='http://www.gotosolr.com/search-results/?search=so
 
 == Frequently Asked Questions ==
 
-= Which PHP version is required?=
+= Why the search page does not show up ? =
+You have to select the admin option "Replace standard WP search", and verify that your urls permalinks are activated.
+
+= Which PHP version is required ? =
 
 WPSOLR uses a Solr client library, Solarium, which requires namespaces.
 
