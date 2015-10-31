@@ -158,3 +158,7 @@ border:solid 1px #666666;
     
     width: 99%;
 }
+ul.typeahead.wdm-dropdown-menu strong {
+	display: inline !important;
+}
+
