@@ -19,8 +19,8 @@ add_action( 'wp_head', 'add_scripts' );
 function add_scripts() {
 	wp_enqueue_style( 'solr_auto_css', plugins_url( 'css/bootstrap.min.css', __FILE__ ) );
 	wp_enqueue_style( 'solr_frontend', plugins_url( 'css/style.css', __FILE__ ) );
-	wp_enqueue_script( 'solr_auto_js1', plugins_url( 'js/bootstrap-typeahead.js', __FILE__ ), array( 'jquery' ), false, true );
-	wp_enqueue_script( 'solr_autocomplete', plugins_url( 'js/autocomplete_solr.js', __FILE__ ), array( 'solr_auto_js1' ), false, true );
+	wp_enqueue_script( 'solr_auto_js1', plugins_url( 'js/bootstrap-typeahead.js', __FILE__ ), array( 'jquery' ), '5.8.1', true );
+	wp_enqueue_script( 'solr_autocomplete', plugins_url( 'js/autocomplete_solr.js', __FILE__ ), array( 'solr_auto_js1' ), '5.8.1', true );
 }
 
 function fun_search_indexed_data() {
