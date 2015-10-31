@@ -10,6 +10,9 @@ jQuery(document).ready(function () {
         var wdm_action = jQuery('#path_to_fold').val();
 
         jQuery(this).typeahead({
+			matcher: function (item) {
+				return true;
+			},
             ajax: {
                 url: admin_path,
                 triggerLength: 1,
