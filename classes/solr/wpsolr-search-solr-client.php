@@ -104,6 +104,49 @@ class WPSolrSearchSolrClient extends WPSolrAbstractSolrClient {
 		return $results;
 	}
 
+	/*
+	 * Manage options by hosting mode
+	 * Use a dedicated postfix added to the option name.
+	 */
+
+	public function get_facet_suggestions( $input ) {
+
+		$client = $this->client;
+
+		$query = $client->createQuery( $client::QUERY_SELECT )
+			->setOmitHeader( null )
+			->setRows( 0 );
+
+		$query->getFacetSet()
+			->createFacetField( 'suggest' )
+			->setField( 'suggest' )
+			->setPrefix( $input )
+			->setLimit( 20 );
+
+		$result = $client->execute( $query );
+		$facets = $result->getFacetSet();
+
+		if ($facets != null)
+		{
+			$suggest = $facets->getFacet( 'suggest' )->getValues();
+
+			if (count($suggest) > 1)
+			{
+				foreach ($suggest as $suggestion => $count)
+				{
+					if (strtolower( $suggestion ) == $input)
+					{
+						continue;
+					}
+
+					$results[] = $suggestion;
+				}
+			}
+		}
+
+		return $results;
+	}
+
 	/**
 	 * Retrieve or create the search page
 	 */
