@@ -39,7 +39,8 @@ function fun_search_indexed_data() {
 	// Load localization options
 	$localization_options = OptionLocalization::get_options();
 
-	$wdm_typehead_request_handler = 'wdm_return_solr_rows';
+	$wdm_typehead_request_handler = !empty( $_GET['facet'] ) ?
+		'wdm_return_facet_solr_rows' : 'wdm_return_solr_rows';
 
 	echo "<div class='cls_search' style='width:100%'> <form action='$url' method='get'  class='search-frm' >";
 	echo '<input type="hidden" value="' . $wdm_typehead_request_handler . '" id="path_to_fold">';

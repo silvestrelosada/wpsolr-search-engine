@@ -243,7 +243,8 @@ function solr_search_form() {
 		// Get the result option
 		$results_options = get_option( 'wdm_solr_res_data' );
 
-		$wdm_typehead_request_handler = 'wdm_return_solr_rows';
+		$wdm_typehead_request_handler = !empty( $_GET['facet'] ) ?
+			'wdm_return_facet_solr_rows' : 'wdm_return_solr_rows';
 
 		$get_page_info = WPSolrSearchSolrClient::get_search_page();
 		$ajax_nonce    = wp_create_nonce( "nonce_for_autocomplete" );
