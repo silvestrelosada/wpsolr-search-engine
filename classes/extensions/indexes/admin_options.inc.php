@@ -3,7 +3,7 @@
 /**
  * Included file to display admin options
  */
-
+global $license_manager;
 
 WpSolrExtensions::require_once_wpsolr_extension( WpSolrExtensions::OPTION_INDEXES, true );
 
@@ -39,7 +39,7 @@ $form_data                             = WpSolrExtensions::extract_form_data( $i
 		$subtabs[ $index_indice ] = isset( $index['index_name'] ) ? $index['index_name'] : 'Index with no name';
 	}
 
-	$subtabs['new_index'] = 'Configure another index';
+	$subtabs['new_index'] = count( $option_object->get_indexes() ) > 0 ? $license_manager->show_premium_link( OptionLicenses::LICENSE_PACKAGE_CORE, 'Configure another index', false ) : 'Configure your first index';
 
 	// Create subtabs on the left side
 	$subtab = wpsolr_admin_sub_tabs( $subtabs );
@@ -62,7 +62,8 @@ $form_data                             = WpSolrExtensions::extract_form_data( $i
 						'managed_solr_service_id'   => $form_data['managed_solr_service_id']['value'],
 						'response_error'            => ( isset( $response_object ) && ! OptionManagedSolrServer::is_response_ok( $response_object ) ) ? OptionManagedSolrServer::get_response_error_message( $response_object ) : '',
 						'google_recaptcha_site_key' => isset( $google_recaptcha_site_key ) ? $google_recaptcha_site_key : '',
-						'google_recaptcha_token'    => isset( $google_recaptcha_token ) ? $google_recaptcha_token : ''
+						'google_recaptcha_token'    => isset( $google_recaptcha_token ) ? $google_recaptcha_token : '',
+						'total_nb_indexes'          => $option_object->get_nb_indexes()
 					) );
 			}
 
@@ -89,14 +90,62 @@ $form_data                             = WpSolrExtensions::extract_form_data( $i
 			<?php
 			foreach ( ( isset( $option_data['solr_indexes'] ) ? $option_data['solr_indexes'] : array() ) as $index_indice => $index ) {
 
-				$is_index_type_temporary = $option_object->is_index_type_temporary( $option_data['solr_indexes'][ $index_indice ] );
-				$is_index_readonly       = $is_index_type_temporary;
+				$is_index_type_temporary = false;
+				$is_index_type_managed   = false;
+				$is_index_readonly       = false;
+
+				if ( $subtab === $index_indice ) {
+					$is_index_type_temporary = $option_object->is_index_type_temporary( $option_data['solr_indexes'][ $index_indice ] );
+					$is_index_type_managed   = $option_object->is_index_type_managed( $option_data['solr_indexes'][ $index_indice ] );
+					$is_index_readonly       = $is_index_type_temporary;
+
+					if ( $is_index_type_temporary ) {
+						// Check that the temporary index is still temporary on the server.
+						$managed_solr_server = new OptionManagedSolrServer( $option_object->get_index_managed_solr_service_id( $index ) );
+						$response_object     = $managed_solr_server->call_rest_get_temporary_solr_index_status( $index_indice );
+
+						if ( OptionManagedSolrServer::is_response_ok( $response_object ) ) {
+
+							$is_index_unknown_on_server = OptionManagedSolrServer::get_response_result( $response_object, 'isUnknown' );
+
+							if ( $is_index_unknown_on_server ) {
+
+								// Change the solr index type to managed
+								$option_object->update_index_property( $index_indice, OptionIndexes::INDEX_TYPE, OptionIndexes::STORED_INDEX_TYPE_UNMANAGED );
+
+								// Display message
+								$response_error = 'This temporary solr core has expired and was therefore deleted. You can remove it from your configuration';
+
+								// No more readonly therefore
+								$is_index_type_temporary = false;
+								$is_index_readonly       = false;
+
+							} else {
+
+								$is_index_type_temporary_on_server = OptionManagedSolrServer::get_response_result( $response_object, 'isTemporary' );
+								if ( ! $is_index_type_temporary_on_server ) {
+
+									// Change the solr index type to managed
+									$option_object->update_index_property( $index_indice, OptionIndexes::INDEX_TYPE, OptionIndexes::STORED_INDEX_TYPE_MANAGED );
+
+									// No more readonly therefore
+									$is_index_type_temporary = false;
+									$is_index_readonly       = false;
+								}
+							}
+
+						} else {
+
+							$response_error = ( isset( $response_object ) && ! OptionManagedSolrServer::is_response_ok( $response_object ) ) ? OptionManagedSolrServer::get_response_error_message( $response_object ) : '';
+						}
+					}
+				}
 
 				?>
 
 				<div
 					id="<?php echo $subtab != $index_indice ? $index_indice : "current_index_configuration_edited_id" ?>"
-					class="wrapper" <?php echo $subtab != $index_indice ? "style='display:none'" : "" ?> >
+					class="wrapper" <?php echo ( $subtab != $index_indice ) ? "style='display:none'" : "" ?> >
 
 					<input type='hidden'
 					       name="<?php echo $option_name ?>[solr_indexes][<?php echo $index_indice ?>][managed_solr_service_id]"
@@ -109,8 +158,10 @@ $form_data                             = WpSolrExtensions::extract_form_data( $i
 
 					<h4 class='head_div'>
 						<?php echo $is_index_type_temporary
-							? 'This is your Test Index configuration'
-							: 'Manually configure your existing Solr index';
+							? 'This is your temporary (2 hours) Solr Index configuration for testing'
+							: ( $is_index_type_managed
+								? sprintf( 'This is your Index configuration managed by %s', $option_object->get_index_managed_solr_service_id( $option_data['solr_indexes'][ $index_indice ] ) )
+								: sprintf( 'Manually configure your existing Solr index. %s', '<a href="http://www.gotosolr.com/en" target="_wpsolr">Sorry, no free support by chat to setup your own local index</a>' ) );
 						?>
 					</h4>
 
@@ -132,7 +183,13 @@ $form_data                             = WpSolrExtensions::extract_form_data( $i
 					?>
 
 					<div class="wdm_row">
-						<div class='solr_error'></div>
+						<h4 class="solr_error" <?php echo $subtab != $index_indice ? "style='display:none'" : "" ?> >
+							<?php
+							if ( ! empty( $response_error ) ) {
+								echo $response_error;
+							}
+							?>
+						</h4>
 					</div>
 
 					<div class="wdm_row">
@@ -158,7 +215,7 @@ $form_data                             = WpSolrExtensions::extract_form_data( $i
 								<select
 									name="<?php echo $option_name ?>[solr_indexes][<?php echo $index_indice ?>][index_protocol]"
 									<?php echo $subtab === $index_indice ? "id='index_protocol'" : "" ?>
-									>
+								>
 									<option
 										value='http' <?php selected( 'http', empty( $option_data['solr_indexes'][ $index_indice ]['index_protocol'] ) ? 'http' : $option_data['solr_indexes'][ $index_indice ]['index_protocol'] ) ?>>
 										http
@@ -198,7 +255,7 @@ $form_data                             = WpSolrExtensions::extract_form_data( $i
 					<div class="wdm_row">
 						<div class='col_left'>Solr Port</div>
 						<div class='col_right'>
-							<input type="text" type='text' <?php echo $is_index_readonly ? 'readonly' : ''; ?>
+							<input type="text" type='text'
 							       placeholder="8983 or 443 or any other port"
 							       name="<?php echo $option_name ?>[solr_indexes][<?php echo $index_indice ?>][index_port]"
 								<?php echo $subtab === $index_indice ? "id='index_port'" : "" ?>
@@ -270,7 +327,7 @@ $form_data                             = WpSolrExtensions::extract_form_data( $i
 								       type="button" class="button-primary"
 								       value="<?php echo $managed_solr_service_orders_url[ OptionManagedSolrServer::MANAGED_SOLR_SERVICE_ORDER_URL_BUTTON_LABEL ]; ?>"
 								       onclick="window.open('<?php echo $managed_solr_service_orders_url[ OptionManagedSolrServer::MANAGED_SOLR_SERVICE_ORDER_URL_LINK ]; ?>', '__blank');"
-									/>
+								/>
 
 								<?php
 
@@ -279,7 +336,8 @@ $form_data                             = WpSolrExtensions::extract_form_data( $i
 
 							}
 							?>
-
+							<a href="http://www.gotosolr.com/en" target="_wpsolr">Free support by chat to setup your
+								Gotosolr index</a>
 						</div>
 						<div class="clear"></div>
 

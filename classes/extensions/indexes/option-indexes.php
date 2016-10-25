@@ -9,16 +9,26 @@
  */
 class OptionIndexes extends WpSolrExtensions {
 
+	// Solr index properties
+	const INDEX_TYPE = 'index_type';
+	const MANAGED_SOLR_SERVICE_ID = 'managed_solr_service_id';
+
+
 	private $_options;
 
+	// Unmanaged Solr index
 	const STORED_INDEX_TYPE_UNMANAGED = 'index_type_unmanaged';
+	// Temporary Managed Solr index
 	const STORED_INDEX_TYPE_MANAGED_TEMPORARY = 'index_type_managed_temporary';
+	// Managed Solr index
+	const STORED_INDEX_TYPE_MANAGED = 'index_type_managed';
 
 	/*
 	 * Constructor
 	 *
 	 * Subscribe to actions
 	 */
+
 	function __construct() {
 		$this->_options = self::get_option_data( self::OPTION_INDEXES, array() );
 	}
@@ -165,12 +175,12 @@ class OptionIndexes extends WpSolrExtensions {
 
 	public function get_index_managed_solr_service_id( $solr_index ) {
 
-		return $this->get_index_property( $solr_index, 'managed_solr_service_id', '' );
+		return $this->get_index_property( $solr_index, self::MANAGED_SOLR_SERVICE_ID, '' );
 	}
 
 	public function get_index_type( $solr_index ) {
 
-		return $this->get_index_property( $solr_index, 'index_type', '' );
+		return $this->get_index_property( $solr_index, self::INDEX_TYPE, '' );
 	}
 
 	public function is_index_type_temporary( $solr_index ) {
@@ -178,6 +188,25 @@ class OptionIndexes extends WpSolrExtensions {
 		$index_managed_solr_service_id = $this->get_index_managed_solr_service_id( $solr_index );
 
 		return ( ! empty( $index_managed_solr_service_id ) && ( self::STORED_INDEX_TYPE_MANAGED_TEMPORARY === $this->get_index_type( $solr_index ) ) );
+	}
+
+	public function is_index_type_managed( $solr_index ) {
+
+		$index_managed_solr_service_id = $this->get_index_managed_solr_service_id( $solr_index );
+
+		return ( ! empty( $index_managed_solr_service_id ) && ( self::STORED_INDEX_TYPE_MANAGED === $this->get_index_type( $solr_index ) ) );
+	}
+
+	public function update_index_property( $solr_index_indice, $property_name, $property_value ) {
+
+		$solr_indexes = $this->get_indexes();
+
+		$solr_indexes[ $solr_index_indice ][ $property_name ] = $property_value;
+
+		$this->_options['solr_indexes'] = $solr_indexes;
+
+		// Save the options containing the new index
+		$this->set_option_data( self::OPTION_INDEXES, $this->_options );
 	}
 
 	/**
@@ -203,6 +232,13 @@ class OptionIndexes extends WpSolrExtensions {
 		return false;
 	}
 
+	public function get_nb_indexes() {
+
+		$solr_indexes = $this->get_indexes();
+
+		return isset( $solr_indexes ) ? count( $solr_indexes ) : 0;
+	}
+
 	public function create_index( $managed_solr_service_id, $index_type, $index_uuid, $index_name, $index_protocol, $index_host, $index_port, $index_path, $index_key, $index_secret ) {
 
 		$solr_indexes = $this->get_indexes();
@@ -213,19 +249,19 @@ class OptionIndexes extends WpSolrExtensions {
 		// Fill the solr index
 		$solr_indexes[ $solr_index_indice ] = array();
 
-		$solr_indexes[ $solr_index_indice ]['managed_solr_service_id'] = $managed_solr_service_id;
-		$solr_indexes[ $solr_index_indice ]['index_type']              = $index_type;
-		$solr_indexes[ $solr_index_indice ]['index_name']              = $index_name;
-		$solr_indexes[ $solr_index_indice ]['index_protocol']          = $index_protocol;
-		$solr_indexes[ $solr_index_indice ]['index_host']              = $index_host;
-		$solr_indexes[ $solr_index_indice ]['index_port']              = $index_port;
-		$solr_indexes[ $solr_index_indice ]['index_path']              = $index_path;
-		$solr_indexes[ $solr_index_indice ]['index_key']               = $index_key;
-		$solr_indexes[ $solr_index_indice ]['index_secret']            = $index_secret;
+		$solr_indexes[ $solr_index_indice ][ self::MANAGED_SOLR_SERVICE_ID ] = $managed_solr_service_id;
+		$solr_indexes[ $solr_index_indice ][ self::INDEX_TYPE ]              = $index_type;
+		$solr_indexes[ $solr_index_indice ]['index_name']                    = $index_name;
+		$solr_indexes[ $solr_index_indice ]['index_protocol']                = $index_protocol;
+		$solr_indexes[ $solr_index_indice ]['index_host']                    = $index_host;
+		$solr_indexes[ $solr_index_indice ]['index_port']                    = $index_port;
+		$solr_indexes[ $solr_index_indice ]['index_path']                    = $index_path;
+		$solr_indexes[ $solr_index_indice ]['index_key']                     = $index_key;
+		$solr_indexes[ $solr_index_indice ]['index_secret']                  = $index_secret;
 
 		$this->_options['solr_indexes'] = $solr_indexes;
 
-		// Save the options contaning the new index
+		// Save the options containing the new index
 		$this->set_option_data( self::OPTION_INDEXES, $this->_options );
 
 		// Update the default search Solr index with the newly created.
@@ -287,17 +323,19 @@ class OptionIndexes extends WpSolrExtensions {
 
 
 	/**
+	 * @param null $solr_index_indice
+	 * @param $language_code
 	 * @param $timeout
 	 *
 	 * @return array Solarium configuration
 	 * @throws Exception
 	 */
-	public function build_solarium_config( $solr_index_indice = null, $timeout ) {
+	public function build_solarium_config( &$solr_index_indice = null, $language_code = null, $timeout ) {
 
 		if ( ! isset( $solr_index_indice ) ) {
 
 			// Give a chance to set the solr index indice
-			$solr_index_indice = apply_filters( WpSolrFilters::WPSOLR_FILTER_SEARCH_GET_DEFAULT_SOLR_INDEX_INDICE, null );
+			$solr_index_indice = apply_filters( WpSolrFilters::WPSOLR_FILTER_SEARCH_GET_DEFAULT_SOLR_INDEX_INDICE, null, $language_code );
 
 			if ( ! isset( $solr_index_indice ) ) {
 				// Retrieve the default indexing Solr index

@@ -29,10 +29,18 @@ class WpSolrSchema {
 	const _FIELD_NAME_CATEGORIES_STR = 'categories_str';
 	const _FIELD_NAME_TAGS = 'tags';
 	const _FIELD_NAME_CUSTOM_FIELDS = 'categories';
+	const _FIELD_NAME_FLAT_HIERARCHY = 'flat_hierarchy_%s'; // field contains hierarchy as a string with separator
+	const _FIELD_NAME_NON_FLAT_HIERARCHY = 'non_flat_hierarchy_%s'; // filed contains hierarchy as an array
+	const _FIELD_NAME_BLOG_NAME_STR = 'blog_name_str';
+	const _FIELD_NAME_POST_THUMBNAIL_HREF_STR = 'post_thumbnail_href_str';
+	const _FIELD_NAME_POST_HREF_STR = 'post_href_str';
+
+	// Separator of a flatten hierarchy
+	const FACET_HIERARCHY_SEPARATOR = '->';
 
 	/*
-	 * Dynamic types
-	 */
+		 * Dynamic types
+		 */
 	// Solr dynamic type postfix for text
 	const _DYNAMIC_TYPE_POSTFIX_TEXT = '_t';
 

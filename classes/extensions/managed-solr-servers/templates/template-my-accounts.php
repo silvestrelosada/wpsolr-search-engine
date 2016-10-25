@@ -11,7 +11,8 @@
 			<span>Select an account</span>
 
 			<div style="float: right;">
-				<form action="?page=<?php echo $_GET['page']; ?>&tab=<?php echo $_GET['tab']; ?>&subtab=<?php echo $managed_solr_server->get_id(); ?>"
+				<?php $form_action = sprintf( '?page=%s&tab=%s&subtab=%s', $_GET['page'], $_GET['tab'], $managed_solr_server->get_id() ); ?>
+				<form action="<?php echo esc_url( $form_action ); ?>"
 				      method="POST">
 					<input name="submit-form-logout" type="submit"
 					       class="button-primary wdm-save"

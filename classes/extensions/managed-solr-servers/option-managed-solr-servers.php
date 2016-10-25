@@ -24,7 +24,7 @@ class OptionManagedSolrServer extends WpSolrExtensions {
 	const PATH_LIST_INDEXES = '/accounts/%s/indexes';
 
 	// Rest api orders channel property
-	const MANAGED_SOLR_SERVICE_CHANNEL_URL = 'MANAGED_SOLR_SERVICE_CHANNEL_URL';
+	const MANAGED_SOLR_SERVICE_CHANNEL_ORDER_URL = 'MANAGED_SOLR_SERVICE_CHANNEL_ORDER_URL';
 	const MANAGED_SOLR_SERVICE_CHANNEL_GOOGLE_RECAPTCHA_TOKEN_URL = 'MANAGED_SOLR_SERVICE_CHANNEL_GOOGLE_RECAPTCHA_TOKEN_URL';
 	const MANAGED_SOLR_SERVICE_LABEL = 'MANAGED_SOLR_SERVICE_LABEL';
 	const MANAGED_SOLR_SERVICE_HOME_PAGE = 'MANAGED_SOLR_SERVICE_HOME_PAGE';
@@ -43,84 +43,111 @@ class OptionManagedSolrServer extends WpSolrExtensions {
 	 * Subscribe to actions
 	 */
 
+	function __construct( $managed_solr_service_id = null ) {
 
-	function __construct( $managed_solr_service_id ) {
+		if ( isset( $managed_solr_service_id ) ) {
 
-		$this->_managed_solr_service_id = $managed_solr_service_id;
+			$this->_managed_solr_service_id = $managed_solr_service_id;
 
-		//$this->set_service_option('token', '');
+			//$this->set_service_option('token', '');
 
-		$this->_options = self::get_option_data( self::OPTION_MANAGED_SOLR_SERVERS, null );
+			$this->_options = self::get_option_data( self::OPTION_MANAGED_SOLR_SERVERS, null );
 
-		$this->_managed_solr_service = $this->get_managed_solr_service();
+			$this->_managed_solr_service = $this->get_managed_solr_service();
 
-		$this->_api_path = $this->_managed_solr_service[ self::MANAGED_SOLR_SERVICE_API_PATH ];
-
-	}
-
-
-	/*
-	 * Generic REST calls
-	 */
-	public function call_rest_get( $path ) {
-
-		$full_path = $this->_api_path . $path . '&access_token=' . $this->get_service_option( 'token' );
-
-		// Pb with SSL certificate. Disabled.
-		$options = array(
-			'verify'  => false,
-			'timeout' => 30,
-		);
-
-		// Json format.
-		$headers = array(
-			'Content-Type' => 'application/json'
-		);
-
-		$response = Requests::get(
-			$full_path,
-			$headers,
-			$options
-		);
-
-		//var_dump( $full_path );
-		//var_dump( $response->body );
-
-		if ( 200 != $response->success ) {
-			return (object) array( 'status' => (object) array( 'state' => 'ERROR', 'message' => $response->body ) );
+			$this->_api_path = $this->_managed_solr_service[ self::MANAGED_SOLR_SERVICE_API_PATH ];
 		}
 
-		return json_decode( $response->body );
-
 	}
 
+	/**
+	 * @param $full_path
+	 *
+	 * @args array $args
+	 *
+	 * @return array|mixed|object
+	 */
+	public function call_rest_request( $full_path, $args ) {
+
+		$default_args = array(
+			'timeout' => 60,
+			'verify'  => true,
+			'headers' => array( 'Content-Type' => 'application/json' ),
+		);
+
+		$response = wp_remote_request(
+			$full_path,
+			array_merge( $default_args, $args )
+		);
+
+		if ( is_wp_error( $response ) ) {
+
+			return (object) array(
+				'status' => (object) array(
+					'state'   => 'ERROR',
+					'message' => $response->get_error_message()
+				)
+			);
+		}
+
+		if ( 200 !== $response['response']['code'] ) {
+			return (object) array( 'status' => (object) array( 'state' => 'ERROR', 'message' => $response['body'] ) );
+		}
+
+		return json_decode( $response['body'] );
+	}
+
+
+	/**
+	 * @param $path
+	 * @param array $data
+	 *
+	 * @return array|mixed|object
+	 */
 	public function call_rest_post( $path, $data = array() ) {
 
 		$full_path = ( 'http' === substr( $path, 0, 4 ) ) ? $path : $this->_api_path . $path;
 
-		// Pb with SSL certificate. Disabled.
-		$options = array(
-			'verify'  => false,
-			'timeout' => 60,
+		$args = array(
+			'method' => 'POST',
+			'body'   => wp_json_encode( $data ),
 		);
 
-		// Json format.
-		$headers = array( 'Content-Type' => 'application/json' );
+		return $this->call_rest_request( $full_path, $args );
+	}
 
-		$response = Requests::post(
-			$full_path,
-			$headers,
-			json_encode( $data ),
-			$options
+	/**
+	 * Generic REST calls
+	 *
+	 * @param $path
+	 *
+	 * @return array|mixed|object
+	 */
+	public function call_rest_get( $path ) {
+
+		$full_path = ( 'http' === substr( $path, 0, 4 ) ) ? $path : $this->_api_path . $path . '&access_token=' . $this->get_service_option( 'token' );
+
+		$args = array(
+			'method' => 'GET',
 		);
 
-		//var_dump( $response->body );
-		if ( 200 != $response->success ) {
-			return (object) array( 'status' => (object) array( 'state' => 'ERROR', 'message' => $response->body ) );
-		}
+		return $this->call_rest_request( $full_path, $args );
+	}
 
-		return json_decode( $response->body );
+	/**
+	 * @param $path
+	 *
+	 * @return array|mixed|object
+	 */
+	public function call_rest_delete( $path ) {
 
+		$full_path = ( 'http' === substr( $path, 0, 4 ) ) ? $path : $this->_api_path . $path;
+
+		$args = array(
+			'method' => 'DELETE',
+		);
+
+		return $this->call_rest_request( $full_path, $args );
 	}
 
 	public static function is_response_ok( $response_object ) {
@@ -178,11 +205,55 @@ class OptionManagedSolrServer extends WpSolrExtensions {
 		$managed_solr_service = $this->get_managed_solr_service();
 
 		$response_object = $this->call_rest_post(
-			$managed_solr_service[ self::MANAGED_SOLR_SERVICE_CHANNEL_URL ],
+			$managed_solr_service[ self::MANAGED_SOLR_SERVICE_CHANNEL_ORDER_URL ],
 			array(
 				'response' => $g_recaptcha_response,
 				'remoteip' => $_SERVER['REMOTE_ADDR']
 			)
+		);
+
+		return $response_object;
+	}
+
+	public function call_rest_activate_license( $url, $matching_license, $subscription_number ) {
+
+		$response_object = $this->call_rest_post(
+			$url,
+			array(
+				'matchingLicense'  => $matching_license,
+				'subscriptionUuid' => $subscription_number,
+				'siteUrl'          => home_url()
+			)
+		);
+
+		return $response_object;
+	}
+
+	public function call_rest_deactivate_license( $url, $license_activation_uuid ) {
+
+		$response_object = $this->call_rest_delete(
+			$url . '/' . $license_activation_uuid
+		);
+
+		return $response_object;
+	}
+
+
+	public function call_rest_verify_license( $url, $license_activation_uuid ) {
+
+		$response_object = $this->call_rest_get(
+			$url . '/' . $license_activation_uuid
+		);
+
+		return $response_object;
+	}
+
+	public function call_rest_get_temporary_solr_index_status( $solr_core ) {
+
+		$managed_solr_service = $this->get_managed_solr_service();
+
+		$response_object = $this->call_rest_get(
+			sprintf( '%s/solr-cores/%s', $managed_solr_service[ self::MANAGED_SOLR_SERVICE_CHANNEL_ORDER_URL ], $solr_core )
 		);
 
 		return $response_object;
@@ -254,47 +325,42 @@ class OptionManagedSolrServer extends WpSolrExtensions {
 	 */
 	public static function get_managed_solr_services() {
 
-		return array(
-			/*'local dev' => array(
+		$result = array();
+
+		// Debug environment
+		if ( ! isset( $_SERVER['HTTP_HOST'] ) ? false : $_SERVER['HTTP_HOST'] === 'dev-wpsolr-search-engine.dev' ) {
+			$result['local dev'] = array(
 				self::MANAGED_SOLR_SERVICE_LABEL                              => 'local dev',
 				self::MANAGED_SOLR_SERVICE_HOME_PAGE                          => 'http://www.reseller1.com/en',
 				self::MANAGED_SOLR_SERVICE_API_PATH                           => 'http://10.0.2.2:8082/v1/partners/2c93bcdc-e6cd-4251-b4f7-8130e398dc36',
-				self::MANAGED_SOLR_SERVICE_CHANNEL_URL                        => 'http://10.0.2.2:8082/v1/providers/d26a384b-fa62-4bdb-a1dd-27d714a3f519/accounts/2c93bcdc-e6cd-4251-b4f7-8130e398dc36/addons/51e110f8-a8df-4791-8c09-f22ee81671e6/order-solr-index/6c9b24ed-c368-4d25-a836-15af7ed04447',
+				self::MANAGED_SOLR_SERVICE_CHANNEL_ORDER_URL                  => 'http://10.0.2.2:8082/v1/providers/d26a384b-fa62-4bdb-a1dd-27d714a3f519/accounts/2c93bcdc-e6cd-4251-b4f7-8130e398dc36/addons/51e110f8-a8df-4791-8c09-f22ee81671e6/order-solr-index/6c9b24ed-c368-4d25-a836-15af7ed04447',
 				self::MANAGED_SOLR_SERVICE_CHANNEL_GOOGLE_RECAPTCHA_TOKEN_URL => 'http://10.0.2.2:8082/v1/providers/d26a384b-fa62-4bdb-a1dd-27d714a3f519/accounts/2c93bcdc-e6cd-4251-b4f7-8130e398dc36/addons/51e110f8-a8df-4791-8c09-f22ee81671e6/google-recaptcha-token',
 				self::MANAGED_SOLR_SERVICE_ORDERS_URLS                        => array(
 					array(
-						self::MANAGED_SOLR_SERVICE_ORDER_URL_BUTTON_LABEL => 'Extend with a Yearly Plan',
-						self::MANAGED_SOLR_SERVICE_ORDER_URL_TEXT         => 'Yearly plan',
-						self::MANAGED_SOLR_SERVICE_ORDER_URL_LINK         => 'https://secure.avangate.com/order/checkout.php?PRODS=4642999&QTY=1&CART=1&CARD=1'
-					),
-					array(
-						self::MANAGED_SOLR_SERVICE_ORDER_URL_BUTTON_LABEL => 'Extend with a Monthly Plan',
+						self::MANAGED_SOLR_SERVICE_ORDER_URL_BUTTON_LABEL => 'Convert the trial with a Monthly Plan',
 						self::MANAGED_SOLR_SERVICE_ORDER_URL_TEXT         => 'Monthly plan',
 						self::MANAGED_SOLR_SERVICE_ORDER_URL_LINK         => 'https://secure.avangate.com/order/checkout.php?PRODS=4653966&QTY=1&CART=1&CARD=1'
 					)
 				)
-			),*/
-			'gotosolr' => array(
-				self::MANAGED_SOLR_SERVICE_LABEL                              => 'gotosolr.com',
-				self::MANAGED_SOLR_SERVICE_HOME_PAGE                          => 'http://www.gotosolr.com/en',
-				self::MANAGED_SOLR_SERVICE_API_PATH                           => 'https://api.gotosolr.com/v1/partners/24b7729e-02dc-47d1-9c15-f1310098f93f',
-				self::MANAGED_SOLR_SERVICE_CHANNEL_URL                        => 'https://api.gotosolr.com/v1/providers/8c25d2d6-54ae-4ff6-a478-e2c03f1e08a4/accounts/24b7729e-02dc-47d1-9c15-f1310098f93f/addons/f8622320-5a3b-48cf-a331-f52459c46573/order-solr-index/8037888b-501a-4200-9fb0-b4266434b161',
-				self::MANAGED_SOLR_SERVICE_CHANNEL_GOOGLE_RECAPTCHA_TOKEN_URL => 'https://api.gotosolr.com/v1/providers/8c25d2d6-54ae-4ff6-a478-e2c03f1e08a4/accounts/24b7729e-02dc-47d1-9c15-f1310098f93f/addons/f8622320-5a3b-48cf-a331-f52459c46573/google-recaptcha-token',
-				self::MANAGED_SOLR_SERVICE_ORDERS_URLS                        => array(
-					array(
-						self::MANAGED_SOLR_SERVICE_ORDER_URL_BUTTON_LABEL => 'Extend with a Yearly Plan',
-						self::MANAGED_SOLR_SERVICE_ORDER_URL_TEXT         => 'Yearly plan',
-						self::MANAGED_SOLR_SERVICE_ORDER_URL_LINK         => 'https://secure.avangate.com/order/checkout.php?PRODS=4642999&QTY=1&CART=1&CARD=1'
-					),
-					array(
-						self::MANAGED_SOLR_SERVICE_ORDER_URL_BUTTON_LABEL => 'Extend with a Monthly Plan',
-						self::MANAGED_SOLR_SERVICE_ORDER_URL_TEXT         => 'Monthly plan',
-						self::MANAGED_SOLR_SERVICE_ORDER_URL_LINK         => 'https://secure.avangate.com/order/checkout.php?PRODS=4653966&QTY=1&CART=1&CARD=1'
-					)
+			);
+		}
+
+		$result['gotosolr'] = array(
+			self::MANAGED_SOLR_SERVICE_LABEL                              => 'gotosolr.com',
+			self::MANAGED_SOLR_SERVICE_HOME_PAGE                          => 'http://www.gotosolr.com/en',
+			self::MANAGED_SOLR_SERVICE_API_PATH                           => 'https://api.gotosolr.com/v1/partners/24b7729e-02dc-47d1-9c15-f1310098f93f',
+			self::MANAGED_SOLR_SERVICE_CHANNEL_ORDER_URL                  => 'https://api.gotosolr.com/v1/providers/8c25d2d6-54ae-4ff6-a478-e2c03f1e08a4/accounts/24b7729e-02dc-47d1-9c15-f1310098f93f/addons/f8622320-5a3b-48cf-a331-f52459c46573/order-solr-index/8037888b-501a-4200-9fb0-b4266434b161',
+			self::MANAGED_SOLR_SERVICE_CHANNEL_GOOGLE_RECAPTCHA_TOKEN_URL => 'https://api.gotosolr.com/v1/providers/8c25d2d6-54ae-4ff6-a478-e2c03f1e08a4/accounts/24b7729e-02dc-47d1-9c15-f1310098f93f/addons/f8622320-5a3b-48cf-a331-f52459c46573/google-recaptcha-token',
+			self::MANAGED_SOLR_SERVICE_ORDERS_URLS                        => array(
+				array(
+					self::MANAGED_SOLR_SERVICE_ORDER_URL_BUTTON_LABEL => 'Extend the trial with a Monthly Plan',
+					self::MANAGED_SOLR_SERVICE_ORDER_URL_TEXT         => 'Monthly plan',
+					self::MANAGED_SOLR_SERVICE_ORDER_URL_LINK         => 'https://secure.avangate.com/order/checkout.php?PRODS=4653966&QTY=1&CART=1&CARD=1'
 				)
 			)
 		);
 
+		return $result;
 	}
 
 
@@ -330,9 +396,6 @@ class OptionManagedSolrServer extends WpSolrExtensions {
 	 * @return mixed
 	 */
 	public function generate_convert_orders_urls( $index_solr_core ) {
-
-		// TODO
-		return array();
 
 		// Clone array
 		$generated_orders_urls = $this->get_orders_urls();

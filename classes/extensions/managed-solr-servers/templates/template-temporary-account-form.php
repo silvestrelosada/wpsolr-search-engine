@@ -5,6 +5,7 @@
 ?>
 
 <?php
+global $license_manager;
 ?>
 
 <div class="wrapper">
@@ -37,9 +38,17 @@
 				<?php
 				if ( empty( $google_recaptcha_token ) ) {
 					?>
+					<?php if ( ! $license_manager->is_installed || $license_manager->get_license_is_activated( OptionLicenses::LICENSE_PACKAGE_CORE ) ) { ?>
+					<div class="wpsolr_premium_block_class">
+						<?php echo $license_manager->show_premium_link( OptionLicenses::LICENSE_PACKAGE_CORE, OptionLicenses::TEXT_LICENSE_ACTIVATED, true ); ?>
+					</div>
 				<input name="submit_button_form_temporary_index_select_managed_solr_service_id" type="submit"
 				       class="button-primary "
 				       value="Create my instant free Solr index"/>
+				<?php } else { ?>
+					<?php echo $license_manager->show_premium_link( OptionLicenses::LICENSE_PACKAGE_CORE, 'Create a test Solr index, hosted by gotosolr, valid 2 hours', true ); ?>
+				<br/>
+				<?php } ?>
 
 				<?php } else {
 				?>
@@ -55,7 +64,7 @@
 							data-sitekey="<?php echo $google_recaptcha_site_key; ?>"
 							data-stoken="<?php echo $google_recaptcha_token; ?>"
 							data-callback="recaptchaVerifyCallback"
-							>
+						>
 						</div>
 					</form>
 
@@ -82,7 +91,8 @@
 
 				<div class="wdm_note">
 					If you want to quickly test WPSOLR, without the burden of your own Solr server.</br><br/>
-					Valid during 2 hours. After that, the index will be deleted automatically.<br/><br/>
+					Valid during 2 hours. After that, the index will be deleted automatically, or you can purchase
+					it.<br/><br/>
 				</div>
 
 			</div>
@@ -94,4 +104,3 @@
 
 <div class="numberCircle">or</div>
 <div style="clear: both; margin-bottom: 15px;"></div>
-

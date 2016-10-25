@@ -42,4 +42,38 @@ class WpSolrFilters {
 
 	// Filter to get the indexing index indice for a post
 	const WPSOLR_FILTER_INDEXING_GET_SOLR_INDEX_INDICE_FOR_A_POST = 'wpsolr_filter_get_default_indexing_solr_index_indice_for_a_post';
+
+	// Filter to change search page parameters before creation
+	const WPSOLR_FILTER_BEFORE_CREATE_SEARCH_PAGE = 'wpsolr_filter_before_create_search_page';
+
+	// Filter to change search page slug parameters before creation
+	const WPSOLR_FILTER_SEARCH_PAGE_SLUG = 'wpsolr_filter_search_page_slug';
+
+	// Filter to retrieve a post language from multi-language extensions
+	const WPSOLR_FILTER_POST_LANGUAGE = 'wpsolr_filter_post_language';
+
+	// Filter to change a facet name on search page
+	const WPSOLR_FILTER_SEARCH_PAGE_FACET_NAME = 'wpsolr_filter_search_page_facet_name';
+
+	// Filter before retrieving an option value
+	const WPSOLR_FILTER_BEFORE_GET_OPTION_VALUE = 'wpsolr_filter_before_get_option_value';
+
+	// Filter after retrieving an option value
+	const WPSOLR_FILTER_AFTER_GET_OPTION_VALUE = 'wpsolr_filter_after_get_option_value';
+
+	// Filter a sort option
+	const WPSOLR_FILTER_SORT = 'wpsolr_filter_sort';
+
+	// Action to add string translations to WPML/Polylang
+	const ACTION_TRANSLATION_REGISTER_STRINGS = 'wpsolr_action_translation_register_strings';
+
+	// Get a translated string from WPML/Polylang
+	const WPSOLR_FILTER_TRANSLATION_STRING = 'wpsolr_filter_translation_string';
+
+	// Get attachments that will be added to the body of the indexed post
+	const WPSOLR_FILTER_GET_POST_ATTACHMENTS = 'wpsolr_filter_get_post_attachments';
+
+	// Filter custom fields to be indexed
+	const WPSOLR_FILTER_INDEX_CUSTOM_FIELDS = 'wpsolr_filter_index_custom_fields';
+
 }

@@ -3,7 +3,7 @@
 /**
  * Included file to display admin options
  */
-
+global $license_manager;
 
 WpSolrExtensions::require_once_wpsolr_extension( WpSolrExtensions::EXTENSION_S2MEMBER, true );
 
@@ -16,7 +16,9 @@ $settings_fields_name   = 'solr_extension_s2member_options';
 $array_extension_options             = get_option( $extension_options_name );
 $is_plugin_active                    = WpSolrExtensions::is_plugin_active( WpSolrExtensions::EXTENSION_S2MEMBER );
 $is_plugin_custom_field_for_indexing = PluginS2Member::get_custom_field_capabilities( PluginS2Member::CUSTOM_FIELD_NAME_STORING_POST_CAPABILITIES );
-$custom_field_for_indexing_name = PluginS2Member::CUSTOM_FIELD_NAME_STORING_POST_CAPABILITIES
+$custom_field_for_indexing_name      = PluginS2Member::CUSTOM_FIELD_NAME_STORING_POST_CAPABILITIES;
+
+$plugin_name = "s2member";
 ?>
 
 <div id="extension_s2member-options" class="wdm-vertical-tabs-content">
@@ -81,7 +83,7 @@ $custom_field_for_indexing_name = PluginS2Member::CUSTOM_FIELD_NAME_STORING_POST
 			<div class="wdm_row">
 				<div class='col_left'>Use the <a
 						href="https://wordpress.org/plugins/s2member/"
-						target="_blank">s2Member
+						target="_blank">s2Member (>= 150203)
 						plugin</a>
 					to filter search results.
 					<br/>Think of re-indexing all your data if <a
@@ -134,15 +136,25 @@ $custom_field_for_indexing_name = PluginS2Member::CUSTOM_FIELD_NAME_STORING_POST
 				</div>
 				<div class="clear"></div>
 			</div>
+
 			<div class='wdm_row'>
 				<div class="submit">
-					<input name="save_selected_options_res_form"
-					       id="save_selected_extension_s2member_form" type="submit"
-					       class="button-primary wdm-save" value="Save Options"/>
-
-
+					<?php if ( ! $license_manager->is_installed || $license_manager->get_license_is_activated( OptionLicenses::LICENSE_PACKAGE_S2MEMBER ) ) { ?>
+						<div class="wpsolr_premium_block_class">
+							<?php echo $license_manager->show_premium_link( OptionLicenses::LICENSE_PACKAGE_S2MEMBER, OptionLicenses::TEXT_LICENSE_ACTIVATED, true ); ?>
+						</div>
+						<input <?php echo $is_plugin_active ? '' : 'disabled' ?>
+							name="save_selected_options_res_form"
+							id="save_selected_extension_groups_form" type="submit"
+							class="button-primary wdm-save"
+							value="<?php echo $is_plugin_active ? 'Save Options' : sprintf( 'Install and activate the plugin %s first.', $plugin_name ); ?>"/>
+					<?php } else { ?>
+						<?php echo $license_manager->show_premium_link( OptionLicenses::LICENSE_PACKAGE_S2MEMBER, 'Save Options', true ); ?>
+						<br/>
+					<?php } ?>
 				</div>
 			</div>
+
 		</div>
 
 	</form>

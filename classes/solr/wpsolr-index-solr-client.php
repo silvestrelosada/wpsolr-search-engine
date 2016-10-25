@@ -1,25 +1,40 @@
 <?php
 
 require_once plugin_dir_path( __FILE__ ) . 'wpsolr-abstract-solr-client.php';
+require_once plugin_dir_path( __FILE__ ) . '../metabox/wpsolr-metabox.php';
 
 class WPSolrIndexSolrClient extends WPSolrAbstractSolrClient {
 
 
 	// Posts table name
 	const TABLE_POSTS = 'posts';
+	const CONTENT_SEPARATOR = ' ';
 
 	protected $solr_indexing_options;
 
-	static function create( $solr_index_indice = null ) {
+	/**
+	 * Retrieve the Solr index for a post (usefull for multi languages extensions).
+	 *
+	 * @param $post
+	 *
+	 * @return WPSolrIndexSolrClient
+	 */
+	static function create_from_post( $post ) {
 
-		return new self( $solr_index_indice );
+		// Get the current post language
+		$post_language = apply_filters( WpSolrFilters::WPSOLR_FILTER_POST_LANGUAGE, null, $post );
+
+		return new self( null, $post_language );
 	}
 
-	public function __construct( $solr_index_indice = null ) {
+	static function create( $solr_index_indice = null ) {
 
-		// Load active extensions
-		$this->wpsolr_extensions = new WpSolrExtensions();
+		return new self( $solr_index_indice, null );
+	}
 
+	public function __construct( $solr_index_indice = null, $language_code = null ) {
+
+		$this->init_galaxy();
 
 		$path = plugin_dir_path( __FILE__ ) . '../../vendor/autoload.php';
 		require_once $path;
@@ -30,11 +45,12 @@ class WPSolrIndexSolrClient extends WPSolrAbstractSolrClient {
 		// Build Solarium config from the default indexing Solr index
 		WpSolrExtensions::require_once_wpsolr_extension( WpSolrExtensions::OPTION_INDEXES, true );
 		$options_indexes = new OptionIndexes();
-		$config          = $options_indexes->build_solarium_config( $solr_index_indice, self::DEFAULT_SOLR_TIMEOUT_IN_SECOND );
+		$config          = $options_indexes->build_solarium_config( $solr_index_indice, $language_code, self::DEFAULT_SOLR_TIMEOUT_IN_SECOND );
 
 
-		$this->index_indice = $solr_index_indice;
-		$this->client       = new Solarium\Client( $config );
+		$this->index_indice    = $solr_index_indice;
+		$this->index           = $options_indexes->get_index( $solr_index_indice );
+		$this->solarium_client = new Solarium\Client( $config );
 
 	}
 
@@ -44,12 +60,19 @@ class WPSolrIndexSolrClient extends WPSolrAbstractSolrClient {
 		$this->reset_documents();
 
 		// Execute delete query
-		$client      = $this->client;
+		$client      = $this->solarium_client;
 		$deleteQuery = $client->createUpdate();
-		$deleteQuery->addDeleteQuery( 'id:*' );
-		$deleteQuery->addCommit();
-		$client->execute( $deleteQuery );
 
+		if ( $this->is_in_galaxy ) {
+			// Delete only current site content
+			$deleteQuery->addDeleteQuery( sprintf( '%s:"%s"', WpSolrSchema::_FIELD_NAME_BLOG_NAME_STR, $this->galaxy_slave_filter_value ) );
+		} else {
+			// Delete all content
+			$deleteQuery->addDeleteQuery( 'id:*' );
+		}
+
+		$deleteQuery->addCommit();
+		$this->execute( $client, $deleteQuery );
 
 	}
 
@@ -92,12 +115,12 @@ class WPSolrIndexSolrClient extends WPSolrAbstractSolrClient {
 	public function get_count_documents() {
 		$solr_options = get_option( 'wdm_solr_conf_data' );
 
-		$client = $this->client;
+		$client = $this->solarium_client;
 
 		$query = $client->createSelect();
 		$query->setQuery( '*:*' );
 		$query->setRows( 0 );
-		$resultset = $client->execute( $query );
+		$resultset = $this->execute( $client, $query );
 
 		// Store 0 in # of index documents
 		self::set_index_indice_option_value( 'solr_docs', $resultset->getNumFound() );
@@ -108,14 +131,13 @@ class WPSolrIndexSolrClient extends WPSolrAbstractSolrClient {
 
 	public function delete_document( $post ) {
 
-		$client = $this->client;
+		$client = $this->solarium_client;
 
 		$deleteQuery = $client->createUpdate();
-		$deleteQuery->addDeleteQuery( 'id:' . $post->ID );
+		$deleteQuery->addDeleteQuery( 'id:' . $this->generate_unique_post_id( $post->ID ) );
 		$deleteQuery->addCommit();
 
-		$result = $client->execute( $deleteQuery );
-
+		$result = $this->execute( $client, $deleteQuery );
 
 		return $result->getStatus();
 
@@ -206,7 +228,7 @@ class WPSolrIndexSolrClient extends WPSolrAbstractSolrClient {
 		$query_join_stmt  = '';
 		$query_where_stmt = '';
 
-		$client      = $this->client;
+		$client      = $this->solarium_client;
 		$updateQuery = $client->createUpdate();
 		// Get body of attachment
 		$solarium_extract_query = $client->createExtract();
@@ -347,16 +369,26 @@ class WPSolrIndexSolrClient extends WPSolrAbstractSolrClient {
 			for ( $idx = 0; $idx < $postcount; $idx ++ ) {
 				$postid = $ids_array[ $idx ]['ID'];
 
-				// If post is not on blacklist
-				if ( ! in_array( $postid, $ex_ids ) ) {
+				// If post is not on blacklist, and post is not marked as not indexed
+				if ( ! in_array( $postid, $ex_ids, true ) && ( ! WPSOLR_Metabox::get_metabox_is_do_not_index( $postid ) ) ) {
 					// If post is not an attachment
-					if ( $ids_array[ $idx ]['post_type'] != 'attachment' ) {
+					if ( $ids_array[ $idx ]['post_type'] !== 'attachment' ) {
 
 						// Count this post
 						$doc_count ++;
 
+						// Customize the attachment body, if attachments are linked to the current post
+						$post_attachments = apply_filters( WpSolrFilters::WPSOLR_FILTER_GET_POST_ATTACHMENTS, array(), $postid );
+
+						// Get the attachments body with a Solr Tika extract query
+						$attachment_body = '';
+						foreach ( $post_attachments as $post_attachment ) {
+							$attachment_body .= ( empty( $attachment_body ) ? '' : '. ' ) . self::extract_attachment_text_by_calling_solr_tika( $solarium_extract_query, $post_attachment );
+						}
+
+
 						// Get the posts data
-						$document = self::create_solr_document_from_post_or_attachment( $updateQuery, get_post( $postid ) );
+						$document = self::create_solr_document_from_post_or_attachment( $updateQuery, get_post( $postid ), $attachment_body );
 
 						if ( $is_debug_indexing ) {
 							$this->add_debug_line( $debug_text, null, Array(
@@ -379,7 +411,7 @@ class WPSolrIndexSolrClient extends WPSolrAbstractSolrClient {
 						$doc_count ++;
 
 						// Get the attachments body with a Solr Tika extract query
-						$attachment_body = self::extract_attachment_text_by_calling_solr_tika( $solarium_extract_query, get_post( $postid ) );
+						$attachment_body = self::extract_attachment_text_by_calling_solr_tika( $solarium_extract_query, array( 'post_id' => $postid ) );
 
 						// Get the posts data
 						$document = self::create_solr_document_from_post_or_attachment( $updateQuery, get_post( $postid ), $attachment_body );
@@ -407,7 +439,20 @@ class WPSolrIndexSolrClient extends WPSolrAbstractSolrClient {
 			}
 
 			// Send batch documents to Solr
-			$res_final = self::send_posts_or_attachments_to_solr_index( $updateQuery, $documents );
+			try {
+
+				$res_final = self::send_posts_or_attachments_to_solr_index( $updateQuery, $documents );
+
+			} catch ( Exception $e ) {
+
+				if ( $is_debug_indexing ) {
+					// Echo debug text now, else it will be hidden by the exception
+					echo $debug_text;
+				}
+
+				// Continue
+				throw $e;
+			}
 
 			// Solr error, or only $post to index: exit loop
 			if ( ( ! $res_final ) OR isset( $post ) ) {
@@ -472,24 +517,28 @@ class WPSolrIndexSolrClient extends WPSolrAbstractSolrClient {
 	 */
 	public
 	function create_solr_document_from_post_or_attachment(
-		$solarium_update_query, $post_to_index, $attachment_body = null
+		$solarium_update_query, $post_to_index, $attachment_body = ''
 	) {
 
 		$pid    = $post_to_index->ID;
 		$ptitle = $post_to_index->post_title;
-		if ( isset( $attachment_body ) ) {
+		if ( ! empty( $attachment_body ) ) {
 			// Post is an attachment: we get the document body from the function call
 			$pcontent = $attachment_body;
 		} else {
 			// Post is NOT an attachment: we get the document body from the post object
-			$pcontent = $post_to_index->post_content;
+			$pcontent = empty( $attachment_body ) ? $post_to_index->post_content : $post_to_index->post_content . '. ' . $attachment_body;
 		}
 
-		$pexcerpt         = $post_to_index->post_excerpt;
-		$pauth_info       = get_userdata( $post_to_index->post_author );
-		$pauthor          = isset( $pauth_info ) ? $pauth_info->display_name : '';
-		$pauthor_s        = isset( $pauth_info ) ? get_author_posts_url( $pauth_info->ID, $pauth_info->user_nicename ) : '';
-		$ptype            = $post_to_index->post_type;
+		$pexcerpt   = $post_to_index->post_excerpt;
+		$pauth_info = get_userdata( $post_to_index->post_author );
+		$pauthor    = isset( $pauth_info ) ? $pauth_info->display_name : '';
+		$pauthor_s  = isset( $pauth_info ) ? get_author_posts_url( $pauth_info->ID, $pauth_info->user_nicename ) : '';
+
+		// Get the current post language
+		$post_language = apply_filters( WpSolrFilters::WPSOLR_FILTER_POST_LANGUAGE, null, $post_to_index );
+		$ptype         = $post_to_index->post_type;
+
 		$pdate            = solr_format_date( $post_to_index->post_date_gmt );
 		$pmodified        = solr_format_date( $post_to_index->post_modified_gmt );
 		$pdisplaydate     = $post_to_index->post_date;
@@ -516,10 +565,12 @@ class WPSolrIndexSolrClient extends WPSolrAbstractSolrClient {
 		/*
 			Get all custom categories selected for indexing, including 'category'
 		*/
-		$cats   = array();
-		$taxo   = $this->solr_indexing_options['taxonomies'];
-		$aTaxo  = explode( ',', $taxo );
-		$newTax = array( 'category' ); // Add categories by default
+		$cats                            = array();
+		$categories_flat_hierarchies     = array();
+		$categories_non_flat_hierarchies = array();
+		$taxo                            = $this->solr_indexing_options['taxonomies'];
+		$aTaxo                           = explode( ',', $taxo );
+		$newTax                          = array(); // Add categories by default
 		if ( is_array( $aTaxo ) && count( $aTaxo ) ) {
 		}
 		foreach ( $aTaxo as $a ) {
@@ -535,11 +586,31 @@ class WPSolrIndexSolrClient extends WPSolrAbstractSolrClient {
 		}
 
 
-		// Get all taxonomy terms ot this post
-		$term_names = wp_get_post_terms( $post_to_index->ID, $newTax, array( "fields" => "names" ) );
-		if ( $term_names && ! is_wp_error( $term_names ) ) {
-			foreach ( $term_names as $term_name ) {
-				array_push( $cats, $term_name );
+		// Get all categories ot this post
+		$terms = wp_get_post_terms( $post_to_index->ID, array( 'category' ), array( 'fields' => 'all_with_object_id' ) );
+		if ( $terms && ! is_wp_error( $terms ) ) {
+			foreach ( $terms as $term ) {
+
+				// Add category and it's parents
+				$term_parents_names = array();
+				// Add parents in reverse order ( top-bottom)
+				$term_parents_ids = array_reverse( get_ancestors( $term->term_id, 'category' ) );
+				array_push( $term_parents_ids, $term->term_id );
+
+				foreach ( $term_parents_ids as $term_parent_id ) {
+					$term_parent = get_term( $term_parent_id, 'category' );
+
+					array_push( $term_parents_names, $term_parent->name );
+
+					// Add the term to the non-flat hierarchy (for filter queries on all the hierarchy levels)
+					array_push( $categories_non_flat_hierarchies, $term_parent->name );
+				}
+
+				// Add the term to the flat hierarchy
+				array_push( $categories_flat_hierarchies, implode( WpSolrSchema::FACET_HIERARCHY_SEPARATOR, $term_parents_names ) );
+
+				// Add the term to the categories
+				array_push( $cats, $term->name );
 			}
 		}
 
@@ -556,7 +627,11 @@ class WPSolrIndexSolrClient extends WPSolrAbstractSolrClient {
 
 		$solarium_document_for_update = $solarium_update_query->createDocument();
 
-		$solarium_document_for_update[ WpSolrSchema::_FIELD_NAME_ID ]    = $pid;
+		if ( $this->is_in_galaxy ) {
+			$solarium_document_for_update[ WpSolrSchema::_FIELD_NAME_BLOG_NAME_STR ] = $this->galaxy_slave_filter_value;
+		}
+
+		$solarium_document_for_update[ WpSolrSchema::_FIELD_NAME_ID ]    = $this->generate_unique_post_id( $pid );
 		$solarium_document_for_update[ WpSolrSchema::_FIELD_NAME_PID ]   = $pid;
 		$solarium_document_for_update[ WpSolrSchema::_FIELD_NAME_TITLE ] = $ptitle;
 
@@ -564,8 +639,16 @@ class WPSolrIndexSolrClient extends WPSolrAbstractSolrClient {
 
 			// Index post excerpt, by adding it to the post content.
 			// Excerpt can therefore be: searched, autocompleted, highlighted.
-			$pcontent .= ' ' . $pexcerpt;
+			$pcontent .= self::CONTENT_SEPARATOR . $pexcerpt;
 		}
+
+		if ( ! empty( $pcomments ) ) {
+
+			// Index post comments, by adding it to the post content.
+			// Excerpt can therefore be: searched, autocompleted, highlighted.
+			//$pcontent .= self::CONTENT_SEPARATOR . implode( self::CONTENT_SEPARATOR, $pcomments );
+		}
+
 
 		$content_with_shortcodes_expanded_or_stripped = $pcontent;
 		if ( isset( $this->solr_indexing_options['is_shortcode_expanded'] ) && ( strpos( $pcontent, '[solr_search_shortcode]' ) === false ) ) {
@@ -595,28 +678,81 @@ class WPSolrIndexSolrClient extends WPSolrAbstractSolrClient {
 		$solarium_document_for_update[ WpSolrSchema::_FIELD_NAME_PERMALINK ]          = $purl;
 		$solarium_document_for_update[ WpSolrSchema::_FIELD_NAME_COMMENTS ]           = $pcomments;
 		$solarium_document_for_update[ WpSolrSchema::_FIELD_NAME_NUMBER_OF_COMMENTS ] = $pnumcomments;
-		$solarium_document_for_update[ WpSolrSchema::_FIELD_NAME_CATEGORIES ]         = $cats;
 		$solarium_document_for_update[ WpSolrSchema::_FIELD_NAME_CATEGORIES_STR ]     = $cats;
-		$solarium_document_for_update[ WpSolrSchema::_FIELD_NAME_TAGS ]               = $tag_array;
+		// Hierarchy of categories
+		$solarium_document_for_update[ sprintf( WpSolrSchema::_FIELD_NAME_FLAT_HIERARCHY, WpSolrSchema::_FIELD_NAME_CATEGORIES_STR ) ]     = $categories_flat_hierarchies;
+		$solarium_document_for_update[ sprintf( WpSolrSchema::_FIELD_NAME_NON_FLAT_HIERARCHY, WpSolrSchema::_FIELD_NAME_CATEGORIES_STR ) ] = $categories_non_flat_hierarchies;
+		$solarium_document_for_update[ WpSolrSchema::_FIELD_NAME_TAGS ]                                                                    = $tag_array;
+
+		// Index post thumbnail
+		$this->index_post_thumbnails( $solarium_document_for_update, $pid );
+
+		// Index post url
+		$this->index_post_url( $solarium_document_for_update, $pid );
 
 		$taxonomies = (array) get_taxonomies( array( '_builtin' => false ), 'names' );
 		foreach ( $taxonomies as $parent ) {
 			if ( in_array( $parent, $newTax ) ) {
 				$terms = get_the_terms( $post_to_index->ID, $parent );
 				if ( (array) $terms === $terms ) {
-					$parent = strtolower( str_replace( ' ', '_', $parent ) );
+					$parent    = strtolower( str_replace( ' ', '_', $parent ) );
+					$nm1       = $parent . '_str';
+					$nm2       = $parent . '_srch';
+					$nm1_array = array();
+
+					$taxonomy_non_flat_hierarchies = array();
+					$taxonomy_flat_hierarchies     = array();
+
 					foreach ( $terms as $term ) {
-						$nm1                                = $parent . '_str';
-						$nm2                                = $parent . '_srch';
-						$solarium_document_for_update->$nm1 = $term->name;
-						$solarium_document_for_update->$nm2 = $term->name;
+
+						// Add taxonomy and it's parents
+						$term_parents_names = array();
+						// Add parents in reverse order ( top-bottom)
+						$term_parents_ids = array_reverse( get_ancestors( $term->term_id, $parent ) );
+						array_push( $term_parents_ids, $term->term_id );
+
+						foreach ( $term_parents_ids as $term_parent_id ) {
+							$term_parent = get_term( $term_parent_id, $parent );
+
+							array_push( $term_parents_names, $term_parent->name );
+
+							// Add the term to the non-flat hierarchy (for filter queries on all the hierarchy levels)
+							array_push( $taxonomy_non_flat_hierarchies, $term_parent->name );
+						}
+
+						// Add the term to the flat hierarchy
+						array_push( $taxonomy_flat_hierarchies, implode( WpSolrSchema::FACET_HIERARCHY_SEPARATOR, $term_parents_names ) );
+
+						// Add the term to the taxonomy
+						array_push( $nm1_array, $term->name );
+
+						// Add the term to the categories searchable
+						array_push( $cats, $term->name );
+
+					}
+
+					if ( count( $nm1_array ) > 0 ) {
+						$solarium_document_for_update->$nm1 = $nm1_array;
+						$solarium_document_for_update->$nm2 = $nm1_array;
+
+						$solarium_document_for_update[ sprintf( WpSolrSchema::_FIELD_NAME_FLAT_HIERARCHY, $nm1 ) ]     = $taxonomy_flat_hierarchies;
+						$solarium_document_for_update[ sprintf( WpSolrSchema::_FIELD_NAME_NON_FLAT_HIERARCHY, $nm1 ) ] = $taxonomy_non_flat_hierarchies;
+
 					}
 				}
 			}
 		}
 
+		// Set categories and custom taxonomies as searchable
+		$solarium_document_for_update[ WpSolrSchema::_FIELD_NAME_CATEGORIES ] = $cats;
+
 		// Add custom fields to the document
 		$this->set_custom_fields( $solarium_document_for_update, $post_to_index );
+
+		if ( isset( $this->solr_indexing_options['p_custom_fields'] ) && isset( $solarium_document_for_update[ WpSolrSchema::_FIELD_NAME_CUSTOM_FIELDS ] ) ) {
+
+			$solarium_document_for_update[ WpSolrSchema::_FIELD_NAME_CONTENT ] .= self::CONTENT_SEPARATOR . implode( ". ", $solarium_document_for_update[ WpSolrSchema::_FIELD_NAME_CUSTOM_FIELDS ] );
+		}
 
 		// Last chance to customize the solarium update document
 		$solarium_document_for_update = apply_filters( WpSolrFilters::WPSOLR_FILTER_SOLARIUM_DOCUMENT_FOR_UPDATE, $solarium_document_for_update, $this->solr_indexing_options, $post_to_index, $attachment_body );
@@ -664,12 +800,16 @@ class WPSolrIndexSolrClient extends WPSolrAbstractSolrClient {
 						foreach ( $field as $field_value ) {
 							$field_value_stripped = strip_tags( $field_value );
 
-							array_push( $array_nm1, $field_value_stripped );
-							array_push( $array_nm2, $field_value_stripped );
+							// Only index the field if it has a value.
+							if ( ! empty( $field_value_stripped ) ) {
 
-							// Add current custom field values to custom fields search field
-							// $field being an array, we add each of it's element
-							array_push( $existing_custom_fields, $field_value_stripped );
+								array_push( $array_nm1, $field_value_stripped );
+								array_push( $array_nm2, $field_value_stripped );
+
+								// Add current custom field values to custom fields search field
+								// $field being an array, we add each of it's element
+								array_push( $existing_custom_fields, $field_value_stripped );
+							}
 						}
 
 						$solarium_document_for_update->$nm1 = $array_nm1;
@@ -689,7 +829,7 @@ class WPSolrIndexSolrClient extends WPSolrAbstractSolrClient {
 	}
 
 	/**
-	 * @param $solarium_extract_query
+	 * @param Solarium\QueryType\Extract\Query $solarium_extract_query
 	 * @param $post
 	 *
 	 * @return string
@@ -697,28 +837,39 @@ class WPSolrIndexSolrClient extends WPSolrAbstractSolrClient {
 	 */
 	public
 	function extract_attachment_text_by_calling_solr_tika(
-		$solarium_extract_query, $post
+		$solarium_extract_query, $post_attachement
 	) {
 
 		try {
+			$post_attachement_file = ! empty( $post_attachement['post_id'] ) ? get_attached_file( $post_attachement['post_id'] ) : download_url( $post_attachement['url'] );
+
 			// Set URL to attachment
-			$solarium_extract_query->setFile( get_attached_file( $post->ID ) );
+			$solarium_extract_query->setFile( $post_attachement_file );
 			$doc1 = $solarium_extract_query->createDocument();
 			$solarium_extract_query->setDocument( $doc1 );
 			// We don't want to add the document to the solr index now
 			$solarium_extract_query->addParam( 'extractOnly', 'true' );
 			// Try to extract the document body
-			$client                              = $this->client;
-			$result                              = $client->execute( $solarium_extract_query );
+			$client                              = $this->solarium_client;
+			$result                              = $this->execute( $client, $solarium_extract_query );
 			$response                            = $result->getResponse()->getBody();
 			$attachment_text_extracted_from_tika = preg_replace( '/^.*?\<body\>(.*?)\<\/body\>.*$/i', '\1', $response );
 			$attachment_text_extracted_from_tika = str_replace( '\n', ' ', $attachment_text_extracted_from_tika );
 		} catch ( Exception $e ) {
-			throw new Exception( 'Error on attached file ' . $post->post_title . ' (ID: ' . $post->ID . ')' . ': ' . $e->getMessage(), $e->getCode() );
+			if ( ! empty( $post_attachement['post_id'] ) ) {
+
+				$post = get_post( $post_attachement['post_id'] );
+
+				throw new Exception( 'Error on attached file ' . $post->post_title . ' (ID: ' . $post->ID . ')' . ': ' . $e->getMessage(), $e->getCode() );
+
+			} else {
+
+				throw new Exception( 'Error on attached file ' . $post_attachement['url'] . ': ' . $e->getMessage(), $e->getCode() );
+			}
 		}
 
 		// Last chance to customize the tika extracted attachment body
-		$attachment_text_extracted_from_tika = apply_filters( WpSolrFilters::WPSOLR_FILTER_ATTACHMENT_TEXT_EXTRACTED_BY_APACHE_TIKA, $attachment_text_extracted_from_tika, $solarium_extract_query, $post );
+		$attachment_text_extracted_from_tika = apply_filters( WpSolrFilters::WPSOLR_FILTER_ATTACHMENT_TEXT_EXTRACTED_BY_APACHE_TIKA, $attachment_text_extracted_from_tika, $solarium_extract_query, $post_attachement );
 
 		return $attachment_text_extracted_from_tika;
 	}
@@ -734,14 +885,57 @@ class WPSolrIndexSolrClient extends WPSolrAbstractSolrClient {
 		$solarium_update_query, $documents
 	) {
 
-		$client = $this->client;
+		$client = $this->solarium_client;
 		$solarium_update_query->addDocuments( $documents );
 		$solarium_update_query->addCommit();
-		$result = $client->execute( $solarium_update_query );
+		$result = $this->execute( $client, $solarium_update_query );
 
 		return $result;
 
 	}
 
+	/**
+	 * Index a post thumbnail
+	 *
+	 * @param Solarium\QueryType\Update\Query\Document\Document $document Solarium document
+	 * @param $post_id
+	 *
+	 * @return array|false
+	 */
+	private function index_post_thumbnails( $solarium_document_for_update, $post_id ) {
+
+		if ( $this->is_in_galaxy ) {
+
+			// Master must get thumbnails from the index, as the $post_id is not in local database
+			$thumbnail = wp_get_attachment_image_src( get_post_thumbnail_id( $post_id ) );
+			if ( false !== $thumbnail ) {
+
+				$solarium_document_for_update[ WpSolrSchema::_FIELD_NAME_POST_THUMBNAIL_HREF_STR ] = $thumbnail[0];
+			}
+		}
+
+	}
+
+	/**
+	 * Index a post url
+	 *
+	 * @param Solarium\QueryType\Update\Query\Document\Document $document Solarium document
+	 * @param $post_id
+	 *
+	 * @return array|false
+	 */
+	private function index_post_url( $solarium_document_for_update, $post_id ) {
+
+		if ( $this->is_in_galaxy ) {
+
+			// Master must get urls from the index, as the $post_id is not in local database
+			$url = get_permalink( $post_id );
+			if ( false !== $url ) {
+
+				$solarium_document_for_update[ WpSolrSchema::_FIELD_NAME_POST_HREF_STR ] = $url;
+			}
+		}
+
+	}
 
 }

@@ -1,3 +1,24 @@
+.wpsolr_premium_block_class {
+    float: left;
+    padding-bottom: 15px;
+    width: 100%
+}
+
+a.wpsolr_premium_class {
+    float: none;
+    margin-right: 5px;
+    padding: 0px;
+}
+
+a.wpsolr_premium_class.nav-tab span {
+    margin-left: 5px;
+    font-size: 11px;
+}
+
+a.wpsolr_premium_class.nav-tab  {
+    background-color: #fff6a6;
+}
+
 .numberCircle {
     border-radius: 50%;
     behavior: url(PIE.htc); /* remove if you don't care about IE8 */
@@ -13,16 +34,9 @@
 
     font: 32px Arial, sans-serif;
 }
+
 .wdm-wrap {
     margin: 10px 20px 0 2px;
-}
-
-.page_title {
-    background-color: #F49537;
-    color: #fff;
-    border-left: 4px solid #C15F03;
-    padding: 5px 15px;
-    margin-bottom: 15px;
 }
 
 .solr_error {
@@ -85,15 +99,15 @@
     margin: 0;
 }
 
-input[type=radio]:checked:before {
+.col_right input[type=radio]:checked:before {
     background-color: #C15F03 !important;
 }
 
-input[type=checkbox]:checked:before {
+.col_right input[type=checkbox]:checked:before {
     color: #C15F03 !important;
 }
 
-input[type=text] {
+.col_right input[type=text] {
     width: 300px;
 }
 
@@ -140,6 +154,17 @@ input[type=text] {
     background: #ddd;
     padding: 15px;
     border-left: 4px solid #C15F03;
+}
+
+.wpsolr_license_popup .wdm_note {
+    font-style: italic;
+    font-weight: bold;
+    font-size: large;
+    color: #f8f8f8;
+    margin: 20px;
+    background: #e668fe;
+    padding: 15px;
+    border-left: 4px solid #0a5374;
 }
 
 .name_err, .host_err, .port_err, .path_err, .key_err, .sec_err {
@@ -190,6 +215,8 @@ input[type=text] {
     border-bottom: 1px solid #ccc;
     margin-right: 0;
     margin-bottom: 5px;
+    float: right;
+    width: 200px;
 }
 
 .wdm-vertical-tabs-content {

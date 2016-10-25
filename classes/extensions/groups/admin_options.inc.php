@@ -3,7 +3,7 @@
 /**
  * Included file to display admin options
  */
-
+global $license_manager;
 
 WpSolrExtensions::require_once_wpsolr_extension( WpSolrExtensions::EXTENSION_GROUPS, true );
 
@@ -12,8 +12,11 @@ PluginGroups::update_custom_field_capabilities( PluginGroups::CUSTOM_FIELD_NAME_
 $array_extension_options             = get_option( 'wdm_solr_extension_groups_data' );
 $is_plugin_active                    = WpSolrExtensions::is_plugin_active( WpSolrExtensions::EXTENSION_GROUPS );
 $is_plugin_custom_field_for_indexing = PluginGroups::get_custom_field_capabilities( PluginGroups::CUSTOM_FIELD_NAME_STORING_POST_CAPABILITIES );
-$custom_field_for_indexing_name = PluginGroups::CUSTOM_FIELD_NAME_STORING_POST_CAPABILITIES
+$custom_field_for_indexing_name      = PluginGroups::CUSTOM_FIELD_NAME_STORING_POST_CAPABILITIES;
+
+$plugin_name = "Groups";
 ?>
+
 <div id="extension_groups-options" class="wdm-vertical-tabs-content">
 	<form action="options.php" method="POST" id='extension_groups_settings_form'>
 		<?php
@@ -74,7 +77,7 @@ $custom_field_for_indexing_name = PluginGroups::CUSTOM_FIELD_NAME_STORING_POST_C
 			</div>
 			<div class="wdm_row">
 				<div class='col_left'>Use the <a
-						href="https://wordpress.org/plugins/groups/" target="_blank">Groups
+						href="https://wordpress.org/plugins/groups/" target="_blank">Groups (>= 1.4.13)
 						plugin</a>
 					to filter search results.
 					<br/>Think of re-indexing all your data if <a
@@ -142,13 +145,22 @@ $custom_field_for_indexing_name = PluginGroups::CUSTOM_FIELD_NAME_STORING_POST_C
 			</div>
 			<div class='wdm_row'>
 				<div class="submit">
-					<input name="save_selected_options_res_form"
-					       id="save_selected_extension_groups_form" type="submit"
-					       class="button-primary wdm-save" value="Save Options"/>
-
-
+					<?php if ( ! $license_manager->is_installed || $license_manager->get_license_is_activated( OptionLicenses::LICENSE_PACKAGE_GROUPS ) ) { ?>
+						<div class="wpsolr_premium_block_class">
+							<?php echo $license_manager->show_premium_link( OptionLicenses::LICENSE_PACKAGE_GROUPS, OptionLicenses::TEXT_LICENSE_ACTIVATED, true ); ?>
+						</div>
+						<input <?php echo $is_plugin_active ? '' : 'disabled' ?>
+							name="save_selected_options_res_form"
+							id="save_selected_extension_groups_form" type="submit"
+							class="button-primary wdm-save"
+							value="<?php echo $is_plugin_active ? 'Save Options' : sprintf( 'Install and activate the plugin %s first.', $plugin_name ); ?>"/>
+					<?php } else { ?>
+						<?php echo $license_manager->show_premium_link( OptionLicenses::LICENSE_PACKAGE_GROUPS, 'Save Options', true ); ?>
+						<br/>
+					<?php } ?>
 				</div>
 			</div>
+
 		</div>
 
 	</form>

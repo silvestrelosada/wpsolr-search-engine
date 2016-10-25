@@ -53,8 +53,8 @@ class PluginGroups extends WpSolrExtensions {
 			return;
 		}
 
-		$is_users_without_groups_see_all_results          = $this->_extension_groups_options['is_users_without_groups_see_all_results'];
-		$is_result_without_capabilities_seen_by_all_users = $this->_extension_groups_options['is_result_without_capabilities_seen_by_all_users'];
+		$is_users_without_groups_see_all_results          = isset( $this->_extension_groups_options['is_users_without_groups_see_all_results'] );
+		$is_result_without_capabilities_seen_by_all_users = isset( $this->_extension_groups_options['is_result_without_capabilities_seen_by_all_users'] );
 
 		// Get custom fields selected for indexing
 		$array_options     = get_option( 'wdm_solr_form_data' );
@@ -65,7 +65,7 @@ class PluginGroups extends WpSolrExtensions {
 
 			$user_capability_and_group_array = $this->get_user_capabilities_and_groups( $user->ID );
 
-			if ( ( count( $user_capability_and_group_array ) == 0 ) && ! isset( $is_users_without_groups_see_all_results ) ) {
+			if ( ( count( $user_capability_and_group_array ) == 0 ) && ! $is_users_without_groups_see_all_results ) {
 
 				// No activities for current user, and setup forbid display of any content: not allowed to see any content. Stop here.
 				throw new Exception( isset( $this->_extension_groups_options['message_user_without_groups_shown_no_results'] )
@@ -73,7 +73,7 @@ class PluginGroups extends WpSolrExtensions {
 					: self::DEFAULT_MESSAGE_NOT_AUTHORIZED );
 			}
 
-			if ( ( count( $user_capability_and_group_array ) == 0 ) && isset( $is_users_without_groups_see_all_results ) ) {
+			if ( ( count( $user_capability_and_group_array ) == 0 ) && $is_users_without_groups_see_all_results ) {
 
 				// No activities for current user, and setup authorize display of any content. Stop here.
 				return;
@@ -88,7 +88,7 @@ class PluginGroups extends WpSolrExtensions {
 					$filter_query_str .= '( ' . self::CUSTOM_FIELD_NAME_STORING_POST_CAPABILITIES . ':' . $user_capability_and_group['capability'] . ' )';
 				}
 
-				if ( ( $filter_query_str !== '' ) && isset( $is_result_without_capabilities_seen_by_all_users ) ) {
+				if ( ( $filter_query_str !== '' ) && $is_result_without_capabilities_seen_by_all_users ) {
 					// Authorize documents without capabilities, or with empty capabilities, to be retrieved.
 					$filter_query_no_capabilities_str = '';
 					//$filter_query_no_capabilities_str .= '( ' . ' *:* -' . self::CUSTOM_FIELD_NAME_STORING_POST_CAPABILITIES . ' )'; // no capability

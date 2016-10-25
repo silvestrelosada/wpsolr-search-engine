@@ -3,7 +3,7 @@
 /**
  * Included file to display admin options
  */
-
+global $license_manager;
 
 WpSolrExtensions::require_once_wpsolr_extension( WpSolrExtensions::OPTION_LOCALIZATION, true );
 
@@ -32,24 +32,24 @@ $options = OptionLocalization::get_options( true );
 
 			<div class='wdm_row'>
 				<div class='col_left'>
-					Choose how the front-end texts are localized
-
+					<?php echo $license_manager->show_premium_link( OptionLicenses::LICENSE_PACKAGE_CORE, 'Choose how the front-end texts are localized', true ); ?>
 				</div>
 				<div class='col_right'>
 
 					<?php
 					$select_options = array(
 						'localization_by_admin_options' => 'Use this page to localize all front-end texts',
-						'localization_by_other_means'   => 'Use your theme/plugin .mo files or WPML string module to localize all front-end texts',
+						'localization_by_other_means'   => 'Use your theme/plugin .mo files or WPML string module to localize all front-end texts'
 					);
 					?>
 
 					<select name='wdm_solr_localization_data[localization_method]' id='wpsolr_localization_method'>
 						<?php foreach ( $select_options as $option_code => $option_label ) {
 
-							echo sprintf( "<option value='%s' %s>%s</option>",
+							echo sprintf( "<option value='%s' %s %s>%s</option>",
 								$option_code,
 								isset( $options['localization_method'] ) && $options['localization_method'] === $option_code ? "selected" : "",
+								( 'localization_by_other_means' === $option_code ) ? $license_manager->get_license_enable_html_code( OptionLicenses::LICENSE_PACKAGE_CORE ) : '',
 								$option_label );
 
 						}
