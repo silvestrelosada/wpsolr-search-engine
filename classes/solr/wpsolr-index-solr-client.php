@@ -663,7 +663,7 @@ class WPSolrIndexSolrClient extends WPSolrAbstractSolrClient {
 		// strip_shortcodes() does nothing, probably because shortcodes from themes are not loaded in admin.
 		// Credit: https://wordpress.org/support/topic/stripping-shortcodes-keeping-the-content.
 		// Modified to enable "/" in attributes
-		$content_with_shortcodes_expanded_or_stripped = preg_replace( "~(?:\[/?)[^\]]+/?\]~s", '', $content_with_shortcodes_expanded_or_stripped );  # strip shortcodes, keep shortcode content;
+		$content_with_shortcodes_expanded_or_stripped = str_replace( array( '[', ']' ), '', $content_with_shortcodes_expanded_or_stripped );  # strip shortcodes, keep shortcode content;
 
 		// Remove HTML tags
 		$solarium_document_for_update[ WpSolrSchema::_FIELD_NAME_CONTENT ] = strip_tags( $content_with_shortcodes_expanded_or_stripped );
